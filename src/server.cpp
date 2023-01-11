@@ -69,7 +69,7 @@ public:
     {
         size_t dataSize = msg->get_rcl_serialized_message().buffer_capacity;
         const void* sizeBuf = (const void*)&dataSize;
-        RCLCPP_INFO_STREAM(this->get_logger(), "" << dataSize);
+
         int n = write(sockets[subscriptionId], sizeBuf, sizeof(size_t));
         if(n < 0)
         {
@@ -78,13 +78,15 @@ public:
         }
 
         void* dataBuf = malloc(dataSize);
-        memcpy(dataBuf, &msg->get_rcl_serialized_message().buffer, dataSize);
+        memcpy(dataBuf, msg->get_rcl_serialized_message().buffer, dataSize);
+
         n = write(sockets[subscriptionId], dataBuf, dataSize);
         if(n < 0)
         {
             RCLCPP_ERROR_STREAM(this->get_logger(), "An error occurred while writing to socket for topic " << subscriptions[subscriptionId]->get_topic_name() << ".");
             return;
         }
+
         free(dataBuf);
     }
 

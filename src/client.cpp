@@ -102,24 +102,27 @@ public:
 
     void publishMessageLoop(int threadId)
     {
+        void* sizeBuf = malloc(sizeof(size_t));
         while(rclcpp::ok())
         {
-            void* sizeBuf = malloc(sizeof(size_t));
             int n = read(connectedSockets[threadId], sizeBuf, sizeof(size_t));
             if(n >= 0)
             {
                 size_t dataSize = *((size_t*)sizeBuf);
-                rclcpp::SerializedMessage msg;
-                msg.reserve(dataSize);
                 void* dataBuf = malloc(dataSize);
+
                 n = read(connectedSockets[threadId], dataBuf, dataSize);
                 if(n < 0)
                 {
                     RCLCPP_ERROR_STREAM(this->get_logger(), "An error occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
                     return;
                 }
-                memcpy(&msg.get_rcl_serialized_message().buffer, dataBuf, dataSize);
-                publishers[threadId]->publish(msg); // this line causes a segfault
+
+                rclcpp::SerializedMessage msg;
+                msg.reserve(dataSize);
+                memcpy(msg.get_rcl_serialized_message().buffer, dataBuf, dataSize);
+                publishers[threadId]->publish(msg);
+
                 free(dataBuf);
             }
             else if(errno == EWOULDBLOCK)
@@ -131,8 +134,8 @@ public:
                 RCLCPP_ERROR_STREAM(this->get_logger(), "An error occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
                 return;
             }
-            free(sizeBuf);
         }
+        free(sizeBuf);
     }
 
 private:
