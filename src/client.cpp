@@ -57,7 +57,6 @@ public:
             RCLCPP_ERROR_STREAM(this->get_logger(), "An error occurred while creating a socket connection for topic " << topicName << ".");
             return;
         }
-        RCLCPP_INFO(this->get_logger(), "Created socket");
 
         bzero((char*)&serv_addr, sizeof(serv_addr));
         serv_addr.sin_family = AF_INET;
@@ -68,7 +67,6 @@ public:
             RCLCPP_ERROR_STREAM(this->get_logger(), "An error occurred while trying to bind to socket for topic " << topicName << ".");
             return;
         }
-        RCLCPP_INFO(this->get_logger(), "Binded socket");
         listeningSockets.push_back(sockfd);
 
         int newsockfd;
@@ -84,7 +82,6 @@ public:
             RCLCPP_ERROR_STREAM(this->get_logger(), "An error occurred while accepting connection for topic " << topicName << ".");
             return;
         }
-        RCLCPP_INFO(this->get_logger(), "Accepted connection");
         connectedSockets.push_back(newsockfd);
 
         // create publisher
@@ -102,16 +99,26 @@ public:
 
     void publishMessageLoop(int threadId)
     {
-        void* sizeBuf = malloc(sizeof(size_t));
+        void* capacityBuffer = malloc(sizeof(size_t));
+        void* lengthBuffer = malloc(sizeof(size_t));
         while(rclcpp::ok())
         {
-            int n = read(connectedSockets[threadId], sizeBuf, sizeof(size_t));
+            int n = read(connectedSockets[threadId], capacityBuffer, sizeof(size_t));
             if(n >= 0)
             {
-                size_t dataSize = *((size_t*)sizeBuf);
-                void* dataBuf = malloc(dataSize);
+                size_t capacity = *((size_t*)capacityBuffer);
 
-                n = read(connectedSockets[threadId], dataBuf, dataSize);
+                n = read(connectedSockets[threadId], lengthBuffer, sizeof(size_t));
+                if(n < 0)
+                {
+                    RCLCPP_ERROR_STREAM(this->get_logger(), "An error occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
+                    return;
+                }
+
+                size_t length = *((size_t*)lengthBuffer);
+                void* dataBuffer = malloc(capacity);
+
+                n = read(connectedSockets[threadId], dataBuffer, capacity);
                 if(n < 0)
                 {
                     RCLCPP_ERROR_STREAM(this->get_logger(), "An error occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
@@ -119,11 +126,12 @@ public:
                 }
 
                 rclcpp::SerializedMessage msg;
-                msg.reserve(dataSize);
-                memcpy(msg.get_rcl_serialized_message().buffer, dataBuf, dataSize);
+                msg.reserve(capacity);
+                memcpy(msg.get_rcl_serialized_message().buffer, dataBuffer, capacity);
+                msg.get_rcl_serialized_message().buffer_length = length;
                 publishers[threadId]->publish(msg);
 
-                free(dataBuf);
+                free(dataBuffer);
             }
             else if(errno == EWOULDBLOCK)
             {
@@ -135,7 +143,8 @@ public:
                 return;
             }
         }
-        free(sizeBuf);
+        free(lengthBuffer);
+        free(capacityBuffer);
     }
 
 private:

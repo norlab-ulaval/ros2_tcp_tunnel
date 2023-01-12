@@ -43,7 +43,6 @@ public:
             RCLCPP_ERROR_STREAM(this->get_logger(), "An error occurred while creating a socket for topic " << topicName << ".");
             return;
         }
-        RCLCPP_INFO(this->get_logger(), "Created socket");
 
         bzero((char*)&serv_addr, sizeof(serv_addr));
         serv_addr.sin_family = AF_INET;
@@ -57,7 +56,6 @@ public:
             return;
         }
         sockets.push_back(sockfd);
-        RCLCPP_INFO(this->get_logger(), "Connected");
 
         // create subscription
         rclcpp::QoS qos = rclcpp::QoS(rclcpp::KeepLast(10));
@@ -67,27 +65,37 @@ public:
 
     void subscriptionCallback(std::shared_ptr<rclcpp::SerializedMessage> msg, const int& subscriptionId)
     {
-        size_t dataSize = msg->get_rcl_serialized_message().buffer_capacity;
-        const void* sizeBuf = (const void*)&dataSize;
+        size_t capacity = msg->get_rcl_serialized_message().buffer_capacity;
+        const void* capacityBuffer = (const void*)&capacity;
 
-        int n = write(sockets[subscriptionId], sizeBuf, sizeof(size_t));
+        int n = write(sockets[subscriptionId], capacityBuffer, sizeof(size_t));
         if(n < 0)
         {
             RCLCPP_ERROR_STREAM(this->get_logger(), "An error occurred while writing to socket for topic " << subscriptions[subscriptionId]->get_topic_name() << ".");
             return;
         }
 
-        void* dataBuf = malloc(dataSize);
-        memcpy(dataBuf, msg->get_rcl_serialized_message().buffer, dataSize);
+        size_t length = msg->get_rcl_serialized_message().buffer_length;
+        const void* lengthBuffer = (const void*)&length;
 
-        n = write(sockets[subscriptionId], dataBuf, dataSize);
+        n = write(sockets[subscriptionId], lengthBuffer, sizeof(size_t));
         if(n < 0)
         {
             RCLCPP_ERROR_STREAM(this->get_logger(), "An error occurred while writing to socket for topic " << subscriptions[subscriptionId]->get_topic_name() << ".");
             return;
         }
 
-        free(dataBuf);
+        void* dataBuffer = malloc(capacity);
+        memcpy(dataBuffer, msg->get_rcl_serialized_message().buffer, capacity);
+
+        n = write(sockets[subscriptionId], dataBuffer, capacity);
+        if(n < 0)
+        {
+            RCLCPP_ERROR_STREAM(this->get_logger(), "An error occurred while writing to socket for topic " << subscriptions[subscriptionId]->get_topic_name() << ".");
+            return;
+        }
+
+        free(dataBuffer);
     }
 
 private:
