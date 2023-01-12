@@ -11,6 +11,9 @@ public:
             Node("tcp_tunnel_client"),
             portNo(23456)
     {
+        this->declare_parameter<std::string>("client_ip", "127.0.0.1");
+        this->get_parameter("client_ip", clientIp);
+
         addClientClient = this->create_client<tcp_tunnel::srv::AddClient>("add_client");
         addTopicService = this->create_service<tcp_tunnel::srv::AddTopic>("add_topic",
                                                                           std::bind(&TCPTunnelClient::addTopicCallback, this, std::placeholders::_1, std::placeholders::_2));
@@ -40,7 +43,7 @@ public:
         std::shared_ptr<tcp_tunnel::srv::AddClient::Request> clientRequest = std::make_shared<tcp_tunnel::srv::AddClient::Request>();
         clientRequest->topic = req->topic;
         std_msgs::msg::String ip;
-        ip.data = "127.0.0.1";
+        ip.data = clientIp;
         clientRequest->client_ip = ip;
         std_msgs::msg::UInt16 port;
         port.data = portNo;
@@ -57,6 +60,7 @@ public:
             RCLCPP_ERROR_STREAM(this->get_logger(), "An error occurred while creating a socket connection for topic " << topicName << ".");
             return;
         }
+        fcntl(sockfd, F_SETFL, O_NONBLOCK);
 
         bzero((char*)&serv_addr, sizeof(serv_addr));
         serv_addr.sin_family = AF_INET;
@@ -69,19 +73,23 @@ public:
         }
         listeningSockets.push_back(sockfd);
 
-        int newsockfd;
+        int newsockfd = -1;
         struct sockaddr_in cli_addr;
         socklen_t clilen;
 
         listen(sockfd, 5);
         clilen = sizeof(cli_addr);
-        newsockfd = accept(sockfd, (struct sockaddr*)&cli_addr, &clilen);
-        fcntl(newsockfd, F_SETFL, O_NONBLOCK);
+        std::chrono::time_point<std::chrono::steady_clock> startTime = std::chrono::steady_clock::now();
+        while(std::chrono::steady_clock::now() - startTime < std::chrono::duration<float>(3) && newsockfd < 0)
+        {
+            newsockfd = accept(sockfd, (struct sockaddr*)&cli_addr, &clilen);
+        }
         if(newsockfd < 0)
         {
             RCLCPP_ERROR_STREAM(this->get_logger(), "An error occurred while accepting connection for topic " << topicName << ".");
             return;
         }
+        fcntl(newsockfd, F_SETFL, O_NONBLOCK);
         connectedSockets.push_back(newsockfd);
 
         // create publisher
@@ -155,6 +163,7 @@ private:
     std::vector<int> connectedSockets;
     std::vector<std::thread> threads;
     int portNo;
+    std::string clientIp;
 };
 
 int main(int argc, char** argv)
