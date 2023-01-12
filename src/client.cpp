@@ -131,11 +131,25 @@ public:
                 size_t length = *((size_t*)lengthBuffer);
                 void* dataBuffer = malloc(capacity);
 
+                for(int i = 0; i < int(capacity/1024); ++i)
+                {
+                    n = -1;
+                    startTime = std::chrono::steady_clock::now();
+                    while(std::chrono::steady_clock::now() - startTime < std::chrono::duration<float>(0.1) && n < 0)
+                    {
+                        n = read(connectedSockets[threadId], ((char*)dataBuffer)+(i*1024), 1024);
+                    }
+                    if(n < 0)
+                    {
+                        RCLCPP_ERROR_STREAM(this->get_logger(), "An error occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
+                        return;
+                    }
+                }
                 n = -1;
                 startTime = std::chrono::steady_clock::now();
                 while(std::chrono::steady_clock::now() - startTime < std::chrono::duration<float>(0.1) && n < 0)
                 {
-                    n = read(connectedSockets[threadId], dataBuffer, capacity);
+                    n = read(connectedSockets[threadId], ((char*)dataBuffer)+(int(capacity/1024)*1024), capacity%1024);
                 }
                 if(n < 0)
                 {

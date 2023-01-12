@@ -89,7 +89,16 @@ public:
         void* dataBuffer = malloc(capacity);
         memcpy(dataBuffer, msg->get_rcl_serialized_message().buffer, capacity);
 
-        n = write(sockets[subscriptionId], dataBuffer, capacity);
+        for(int i = 0; i < int(capacity/1024); ++i)
+        {
+            n = write(sockets[subscriptionId], ((char*)dataBuffer)+(i*1024), 1024);
+            if(n < 0)
+            {
+                RCLCPP_ERROR_STREAM(this->get_logger(), "An error occurred while writing to socket for topic " << subscriptions[subscriptionId]->get_topic_name() << ".");
+                return;
+            }
+        }
+        n = write(sockets[subscriptionId], ((char*)dataBuffer)+(int(capacity/1024)*1024), capacity%1024);
         if(n < 0)
         {
             RCLCPP_ERROR_STREAM(this->get_logger(), "An error occurred while writing to socket for topic " << subscriptions[subscriptionId]->get_topic_name() << ".");
