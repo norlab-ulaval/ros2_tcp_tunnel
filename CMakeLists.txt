@@ -11,7 +11,7 @@ find_package(std_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "srv/AddClient.srv"
+  "srv/RegisterClient.srv"
   "srv/AddTopic.srv"
   DEPENDENCIES std_msgs
 )

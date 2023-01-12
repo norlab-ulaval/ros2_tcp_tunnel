@@ -3,7 +3,7 @@
 <package format="3">
   <name>tcp_tunnel</name>
   <version>0.0.1</version>
-  <description>Nodes that allow reliable TCP communication for ROS 2 between remote machines.</description>
+  <description>Nodes that allow reliable TCP relay of ROS 2 topics between remote machines.</description>
   <maintainer email="simon-pierre.deschenes.1@ulaval.ca">sp</maintainer>
   <license>BSD-2.0</license>
 

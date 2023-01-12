@@ -1,5 +1,5 @@
 #include <rclcpp/rclcpp.hpp>
-#include <tcp_tunnel/srv/add_client.hpp>
+#include <tcp_tunnel/srv/register_client.hpp>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
@@ -10,8 +10,9 @@ public:
             Node("tcp_tunnel_server")
     {
 
-        addClientService = this->create_service<tcp_tunnel::srv::AddClient>("add_client",
-                                                                            std::bind(&TCPTunnelServer::addClientCallback, this, std::placeholders::_1, std::placeholders::_2));
+        registerClientService = this->create_service<tcp_tunnel::srv::RegisterClient>("/tcp_tunnel_server/register_client",
+                                                                                      std::bind(&TCPTunnelServer::registerClientCallback, this, std::placeholders::_1,
+                                                                                                std::placeholders::_2));
     }
 
     ~TCPTunnelServer()
@@ -22,8 +23,8 @@ public:
         }
     }
 
-    void addClientCallback(const std::shared_ptr<tcp_tunnel::srv::AddClient::Request> req,
-                           std::shared_ptr<tcp_tunnel::srv::AddClient::Response> res)
+    void registerClientCallback(const std::shared_ptr<tcp_tunnel::srv::RegisterClient::Request> req,
+                                std::shared_ptr<tcp_tunnel::srv::RegisterClient::Response> res)
     {
         std::string topicName = req->topic.data;
         if(this->get_topic_names_and_types().count(topicName) == 0)
@@ -99,7 +100,7 @@ public:
     }
 
 private:
-    rclcpp::Service<tcp_tunnel::srv::AddClient>::SharedPtr addClientService;
+    rclcpp::Service<tcp_tunnel::srv::RegisterClient>::SharedPtr registerClientService;
     std::vector<rclcpp::GenericSubscription::SharedPtr> subscriptions;
     std::vector<int> sockets;
 };

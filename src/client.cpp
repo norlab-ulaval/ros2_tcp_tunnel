@@ -2,7 +2,7 @@
 #include <netinet/in.h>
 #include <fcntl.h>
 #include <tcp_tunnel/srv/add_topic.hpp>
-#include <tcp_tunnel/srv/add_client.hpp>
+#include <tcp_tunnel/srv/register_client.hpp>
 
 class TCPTunnelClient : public rclcpp::Node
 {
@@ -14,8 +14,8 @@ public:
         this->declare_parameter<std::string>("client_ip", "127.0.0.1");
         this->get_parameter("client_ip", clientIp);
 
-        addClientClient = this->create_client<tcp_tunnel::srv::AddClient>("add_client");
-        addTopicService = this->create_service<tcp_tunnel::srv::AddTopic>("add_topic",
+        registerClientClient = this->create_client<tcp_tunnel::srv::RegisterClient>("/tcp_tunnel_server/register_client");
+        addTopicService = this->create_service<tcp_tunnel::srv::AddTopic>("/tcp_tunnel_client/add_topic",
                                                                           std::bind(&TCPTunnelClient::addTopicCallback, this, std::placeholders::_1, std::placeholders::_2));
     }
 
@@ -39,8 +39,8 @@ public:
         }
         std::string topicType = this->get_topic_names_and_types()[topicName][0];
 
-        // call add_client service
-        std::shared_ptr<tcp_tunnel::srv::AddClient::Request> clientRequest = std::make_shared<tcp_tunnel::srv::AddClient::Request>();
+        // call register_client service
+        std::shared_ptr<tcp_tunnel::srv::RegisterClient::Request> clientRequest = std::make_shared<tcp_tunnel::srv::RegisterClient::Request>();
         clientRequest->topic = req->topic;
         std_msgs::msg::String ip;
         ip.data = clientIp;
@@ -48,7 +48,7 @@ public:
         std_msgs::msg::UInt16 port;
         port.data = portNo;
         clientRequest->client_port = port;
-        addClientClient->async_send_request(clientRequest);
+        registerClientClient->async_send_request(clientRequest);
 
         // create sockets
         int sockfd;
@@ -94,7 +94,7 @@ public:
 
         // create publisher
         rclcpp::QoS qos = rclcpp::QoS(rclcpp::KeepLast(10));
-        std::string prefix = "/tcp_tunnel";
+        std::string prefix = "/tcp_tunnel_client";
         if(topicName[0] != '/')
         {
             prefix += "/";
@@ -156,7 +156,7 @@ public:
     }
 
 private:
-    rclcpp::Client<tcp_tunnel::srv::AddClient>::SharedPtr addClientClient;
+    rclcpp::Client<tcp_tunnel::srv::RegisterClient>::SharedPtr registerClientClient;
     rclcpp::Service<tcp_tunnel::srv::AddTopic>::SharedPtr addTopicService;
     std::vector<rclcpp::GenericPublisher::SharedPtr> publishers;
     std::vector<int> listeningSockets;
