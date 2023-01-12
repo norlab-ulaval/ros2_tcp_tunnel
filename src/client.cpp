@@ -116,7 +116,12 @@ public:
             {
                 size_t capacity = *((size_t*)capacityBuffer);
 
-                n = read(connectedSockets[threadId], lengthBuffer, sizeof(size_t));
+                n = -1;
+                std::chrono::time_point<std::chrono::steady_clock> startTime = std::chrono::steady_clock::now();
+                while(std::chrono::steady_clock::now() - startTime < std::chrono::duration<float>(0.1) && n < 0)
+                {
+                    n = read(connectedSockets[threadId], lengthBuffer, sizeof(size_t));
+                }
                 if(n < 0)
                 {
                     RCLCPP_ERROR_STREAM(this->get_logger(), "An error occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
@@ -126,7 +131,12 @@ public:
                 size_t length = *((size_t*)lengthBuffer);
                 void* dataBuffer = malloc(capacity);
 
-                n = read(connectedSockets[threadId], dataBuffer, capacity);
+                n = -1;
+                startTime = std::chrono::steady_clock::now();
+                while(std::chrono::steady_clock::now() - startTime < std::chrono::duration<float>(0.1) && n < 0)
+                {
+                    n = read(connectedSockets[threadId], dataBuffer, capacity);
+                }
                 if(n < 0)
                 {
                     RCLCPP_ERROR_STREAM(this->get_logger(), "An error occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
