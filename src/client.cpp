@@ -57,7 +57,7 @@ public:
         sockfd = socket(AF_INET, SOCK_STREAM, 0);
         if(sockfd < 0)
         {
-            RCLCPP_ERROR_STREAM(this->get_logger(), "Error " << errno << " occurred while creating a socket connection for topic " << topicName << ".");
+            RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while creating a socket connection for topic " << topicName << ".");
             return;
         }
         fcntl(sockfd, F_SETFL, O_NONBLOCK);
@@ -68,7 +68,7 @@ public:
         serv_addr.sin_port = htons(portNo++);
         if(bind(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0)
         {
-            RCLCPP_ERROR_STREAM(this->get_logger(), "Error " << errno << " occurred while trying to bind to socket for topic " << topicName << ".");
+            RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while trying to bind to socket for topic " << topicName << ".");
             return;
         }
         listeningSockets.push_back(sockfd);
@@ -86,7 +86,7 @@ public:
         }
         if(newsockfd < 0)
         {
-            RCLCPP_ERROR_STREAM(this->get_logger(), "Error " << errno << " occurred while accepting connection for topic " << topicName << ".");
+            RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while accepting connection for topic " << topicName << ".");
             return;
         }
         fcntl(newsockfd, F_SETFL, O_NONBLOCK);
@@ -124,7 +124,7 @@ public:
                 }
                 if(n < 0)
                 {
-                    RCLCPP_ERROR_STREAM(this->get_logger(), "Error " << errno << " occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
+                    RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
                     return;
                 }
 
@@ -142,7 +142,7 @@ public:
                     if(n < 0)
                     {
                         RCLCPP_ERROR_STREAM(this->get_logger(),
-                                            "Error " << errno << " occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
+                                            "Error \"" << strerror(errno) << "\" occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
                         return;
                     }
                 }
@@ -154,7 +154,7 @@ public:
                 }
                 if(n < 0)
                 {
-                    RCLCPP_ERROR_STREAM(this->get_logger(), "Error " << errno << " occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
+                    RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
                     return;
                 }
 
@@ -172,7 +172,7 @@ public:
             }
             else
             {
-                RCLCPP_ERROR_STREAM(this->get_logger(), "Error " << errno << " occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
+                RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
                 return;
             }
         }
