@@ -2,6 +2,7 @@
 #include <tcp_tunnel/srv/register_client.hpp>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netinet/tcp.h>
 
 class TCPTunnelServer : public rclcpp::Node
 {
@@ -45,6 +46,13 @@ public:
             return;
         }
 
+        int flag = 1;
+        if (setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(int)) < 0)
+        {
+            RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while setting socket options for topic " << topicName << ".");
+            return;
+        }
+
         // connect to client
         bzero(&serv_addr, sizeof(serv_addr));
         serv_addr.sin_family = AF_INET;
@@ -69,48 +77,34 @@ public:
     {
         size_t capacity = msg->get_rcl_serialized_message().buffer_capacity;
         const void* capacityBuffer = (const void*)&capacity;
-
-        int n = write(sockets[subscriptionId], capacityBuffer, sizeof(size_t));
-        if(n < 0)
-        {
-            RCLCPP_ERROR_STREAM(this->get_logger(),
-                                "Error \"" << strerror(errno) << "\" occurred while writing to socket for topic " << subscriptions[subscriptionId]->get_topic_name() << ".");
-            return;
-        }
+        writeToSocket(sockets[subscriptionId], capacityBuffer, sizeof(size_t));
 
         size_t length = msg->get_rcl_serialized_message().buffer_length;
         const void* lengthBuffer = (const void*)&length;
-
-        n = write(sockets[subscriptionId], lengthBuffer, sizeof(size_t));
-        if(n < 0)
-        {
-            RCLCPP_ERROR_STREAM(this->get_logger(),
-                                "Error \"" << strerror(errno) << "\" occurred while writing to socket for topic " << subscriptions[subscriptionId]->get_topic_name() << ".");
-            return;
-        }
+        writeToSocket(sockets[subscriptionId], lengthBuffer, sizeof(size_t));
 
         void* dataBuffer = malloc(capacity);
         memcpy(dataBuffer, msg->get_rcl_serialized_message().buffer, capacity);
+        writeToSocket(sockets[subscriptionId], dataBuffer, capacity);
+        free(dataBuffer);
+    }
 
-        for(int i = 0; i < int(capacity / 1024); ++i)
+    void writeToSocket(const int& socketfd, const void* buffer, const size_t& nbBytesToWrite)
+    {
+        size_t nbBytesWritten = 0;
+        std::chrono::time_point<std::chrono::steady_clock> startTime = std::chrono::steady_clock::now();
+        while(std::chrono::steady_clock::now() - startTime < std::chrono::duration<float>(3) && nbBytesWritten < nbBytesToWrite)
         {
-            n = write(sockets[subscriptionId], ((char*)dataBuffer) + (i * 1024), 1024);
-            if(n < 0)
+            int n = write(socketfd, ((char*)buffer) + nbBytesWritten, nbBytesToWrite - nbBytesWritten);
+            if(n >= 0)
             {
-                RCLCPP_ERROR_STREAM(this->get_logger(),
-                                    "Error \"" << strerror(errno) << "\" occurred while writing to socket for topic " << subscriptions[subscriptionId]->get_topic_name() << ".");
-                return;
+                nbBytesWritten += n;
             }
         }
-        n = write(sockets[subscriptionId], ((char*)dataBuffer) + (int(capacity / 1024) * 1024), capacity % 1024);
-        if(n < 0)
+        if(nbBytesWritten < nbBytesToWrite)
         {
-            RCLCPP_ERROR_STREAM(this->get_logger(),
-                                "Error \"" << strerror(errno) << "\" occurred while writing to socket for topic " << subscriptions[subscriptionId]->get_topic_name() << ".");
-            return;
+            throw std::runtime_error("An error occurred while reading from socket.");
         }
-
-        free(dataBuffer);
     }
 
 private:

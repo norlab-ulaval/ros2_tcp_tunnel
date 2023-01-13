@@ -122,51 +122,14 @@ public:
             int n = read(connectedSockets[threadId], capacityBuffer, sizeof(size_t));
             if(n >= 0)
             {
+                readFromSocket(connectedSockets[threadId], ((char*)capacityBuffer)+n, sizeof(size_t)-n);
                 size_t capacity = *((size_t*)capacityBuffer);
 
-                n = -1;
-                std::chrono::time_point<std::chrono::steady_clock> startTime = std::chrono::steady_clock::now();
-                while(std::chrono::steady_clock::now() - startTime < std::chrono::duration<float>(0.1) && n < 0)
-                {
-                    n = read(connectedSockets[threadId], lengthBuffer, sizeof(size_t));
-                }
-                if(n < 0)
-                {
-                    RCLCPP_ERROR_STREAM(this->get_logger(),
-                                        "Error \"" << strerror(errno) << "\" occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
-                    return;
-                }
-
+                readFromSocket(connectedSockets[threadId], lengthBuffer, sizeof(size_t));
                 size_t length = *((size_t*)lengthBuffer);
-                void* dataBuffer = malloc(capacity);
 
-                for(int i = 0; i < int(capacity / 1024); ++i)
-                {
-                    n = -1;
-                    startTime = std::chrono::steady_clock::now();
-                    while(std::chrono::steady_clock::now() - startTime < std::chrono::duration<float>(0.1) && n < 0)
-                    {
-                        n = read(connectedSockets[threadId], ((char*)dataBuffer) + (i * 1024), 1024);
-                    }
-                    if(n < 0)
-                    {
-                        RCLCPP_ERROR_STREAM(this->get_logger(),
-                                            "Error \"" << strerror(errno) << "\" occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
-                        return;
-                    }
-                }
-                n = -1;
-                startTime = std::chrono::steady_clock::now();
-                while(std::chrono::steady_clock::now() - startTime < std::chrono::duration<float>(0.1) && n < 0)
-                {
-                    n = read(connectedSockets[threadId], ((char*)dataBuffer) + (int(capacity / 1024) * 1024), capacity % 1024);
-                }
-                if(n < 0)
-                {
-                    RCLCPP_ERROR_STREAM(this->get_logger(),
-                                        "Error \"" << strerror(errno) << "\" occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
-                    return;
-                }
+                void* dataBuffer = malloc(capacity);
+                readFromSocket(connectedSockets[threadId], dataBuffer, capacity);
 
                 rclcpp::SerializedMessage msg;
                 msg.reserve(capacity);
@@ -189,6 +152,24 @@ public:
         }
         free(lengthBuffer);
         free(capacityBuffer);
+    }
+
+    void readFromSocket(const int& socketfd, void* buffer, const size_t& nbBytesToRead)
+    {
+        size_t nbBytesRead = 0;
+        std::chrono::time_point<std::chrono::steady_clock> startTime = std::chrono::steady_clock::now();
+        while(std::chrono::steady_clock::now() - startTime < std::chrono::duration<float>(3) && nbBytesRead < nbBytesToRead)
+        {
+            int n = read(socketfd, ((char*)buffer) + nbBytesRead, nbBytesToRead - nbBytesRead);
+            if(n >= 0)
+            {
+                nbBytesRead += n;
+            }
+        }
+        if(nbBytesRead < nbBytesToRead)
+        {
+            throw std::runtime_error("An error occurred while reading from socket.");
+        }
     }
 
 private:
