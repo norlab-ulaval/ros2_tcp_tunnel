@@ -8,8 +8,7 @@ class TCPTunnelClient : public rclcpp::Node
 {
 public:
     TCPTunnelClient():
-            Node("tcp_tunnel_client"),
-            portNo(23456)
+            Node("tcp_tunnel_client")
     {
         this->declare_parameter<std::string>("client_ip", "127.0.0.1");
         this->get_parameter("client_ip", clientIp);
@@ -39,18 +38,7 @@ public:
         }
         std::string topicType = this->get_topic_names_and_types()[topicName][0];
 
-        // call register_client service
-        std::shared_ptr<tcp_tunnel::srv::RegisterClient::Request> clientRequest = std::make_shared<tcp_tunnel::srv::RegisterClient::Request>();
-        clientRequest->topic = req->topic;
-        std_msgs::msg::String ip;
-        ip.data = clientIp;
-        clientRequest->client_ip = ip;
-        std_msgs::msg::UInt16 port;
-        port.data = portNo;
-        clientRequest->client_port = port;
-        registerClientClient->async_send_request(clientRequest);
-
-        // create sockets
+        // create socket
         int sockfd;
         struct sockaddr_in serv_addr;
 
@@ -62,10 +50,10 @@ public:
         }
         fcntl(sockfd, F_SETFL, O_NONBLOCK);
 
-        bzero((char*)&serv_addr, sizeof(serv_addr));
+        bzero(&serv_addr, sizeof(serv_addr));
         serv_addr.sin_family = AF_INET;
         serv_addr.sin_addr.s_addr = INADDR_ANY;
-        serv_addr.sin_port = htons(portNo++);
+        serv_addr.sin_port = htons(0);
         if(bind(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0)
         {
             RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while trying to bind to socket for topic " << topicName << ".");
@@ -73,6 +61,26 @@ public:
         }
         listeningSockets.push_back(sockfd);
 
+        socklen_t socklen = sizeof(serv_addr);
+        bzero(&serv_addr, socklen);
+        if(getsockname(sockfd, (struct sockaddr*)&serv_addr, &socklen) < 0)
+        {
+            RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while trying to retrieve TCP port assigned for topic " << topicName << ".");
+            return;
+        }
+
+        // call register_client service
+        std::shared_ptr<tcp_tunnel::srv::RegisterClient::Request> clientRequest = std::make_shared<tcp_tunnel::srv::RegisterClient::Request>();
+        clientRequest->topic = req->topic;
+        std_msgs::msg::String ip;
+        ip.data = clientIp;
+        clientRequest->client_ip = ip;
+        std_msgs::msg::UInt16 port;
+        port.data = ntohs(serv_addr.sin_port);
+        clientRequest->client_port = port;
+        registerClientClient->async_send_request(clientRequest);
+
+        // connect to server
         int newsockfd = -1;
         struct sockaddr_in cli_addr;
         socklen_t clilen;
@@ -124,7 +132,8 @@ public:
                 }
                 if(n < 0)
                 {
-                    RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
+                    RCLCPP_ERROR_STREAM(this->get_logger(),
+                                        "Error \"" << strerror(errno) << "\" occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
                     return;
                 }
 
@@ -154,7 +163,8 @@ public:
                 }
                 if(n < 0)
                 {
-                    RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
+                    RCLCPP_ERROR_STREAM(this->get_logger(),
+                                        "Error \"" << strerror(errno) << "\" occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
                     return;
                 }
 
@@ -172,7 +182,8 @@ public:
             }
             else
             {
-                RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
+                RCLCPP_ERROR_STREAM(this->get_logger(),
+                                    "Error \"" << strerror(errno) << "\" occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
                 return;
             }
         }
@@ -187,7 +198,6 @@ private:
     std::vector<int> listeningSockets;
     std::vector<int> connectedSockets;
     std::vector<std::thread> threads;
-    int portNo;
     std::string clientIp;
 };
 

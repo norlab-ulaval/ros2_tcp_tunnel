@@ -45,16 +45,16 @@ public:
             return;
         }
 
-        bzero((char*)&serv_addr, sizeof(serv_addr));
+        // connect to client
+        bzero(&serv_addr, sizeof(serv_addr));
         serv_addr.sin_family = AF_INET;
         serv_addr.sin_addr.s_addr = inet_addr(req->client_ip.data.c_str());
         serv_addr.sin_port = htons(req->client_port.data);
         if(connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0)
         {
             RCLCPP_ERROR_STREAM(this->get_logger(),
-                                "Error \"" << strerror(errno) << "\" occurred while trying to connect to " << req->client_ip.data << " on port " << req->client_port.data << " for topic "
-                                         << topicName
-                                         << ".");
+                                "Error \"" << strerror(errno) << "\" occurred while trying to connect to " << req->client_ip.data << " on port " << req->client_port.data
+                                           << " for topic " << topicName << ".");
             return;
         }
         sockets.push_back(sockfd);
@@ -73,7 +73,8 @@ public:
         int n = write(sockets[subscriptionId], capacityBuffer, sizeof(size_t));
         if(n < 0)
         {
-            RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while writing to socket for topic " << subscriptions[subscriptionId]->get_topic_name() << ".");
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                                "Error \"" << strerror(errno) << "\" occurred while writing to socket for topic " << subscriptions[subscriptionId]->get_topic_name() << ".");
             return;
         }
 
@@ -83,7 +84,8 @@ public:
         n = write(sockets[subscriptionId], lengthBuffer, sizeof(size_t));
         if(n < 0)
         {
-            RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while writing to socket for topic " << subscriptions[subscriptionId]->get_topic_name() << ".");
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                                "Error \"" << strerror(errno) << "\" occurred while writing to socket for topic " << subscriptions[subscriptionId]->get_topic_name() << ".");
             return;
         }
 
@@ -103,7 +105,8 @@ public:
         n = write(sockets[subscriptionId], ((char*)dataBuffer) + (int(capacity / 1024) * 1024), capacity % 1024);
         if(n < 0)
         {
-            RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while writing to socket for topic " << subscriptions[subscriptionId]->get_topic_name() << ".");
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                                "Error \"" << strerror(errno) << "\" occurred while writing to socket for topic " << subscriptions[subscriptionId]->get_topic_name() << ".");
             return;
         }
 
