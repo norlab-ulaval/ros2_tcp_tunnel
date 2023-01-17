@@ -121,12 +121,16 @@ public:
         while(rclcpp::ok())
         {
             int n = read(connectedSockets[threadId], &msg.get_rcl_serialized_message().buffer_length, sizeof(size_t));
-            if(n >= 0)
+            if(n > 0)
             {
                 readFromSocket(connectedSockets[threadId], ((char*)&msg.get_rcl_serialized_message().buffer_length) + n, sizeof(size_t) - n);
                 msg.reserve(msg.get_rcl_serialized_message().buffer_length);
                 readFromSocket(connectedSockets[threadId], msg.get_rcl_serialized_message().buffer, msg.get_rcl_serialized_message().buffer_length);
                 publishers[threadId]->publish(msg);
+            }
+            else if(n == 0)
+            {
+                throw std::runtime_error("Connection closed by server.");
             }
             else if(errno == EWOULDBLOCK)
             {
@@ -134,9 +138,7 @@ public:
             }
             else
             {
-                RCLCPP_ERROR_STREAM(this->get_logger(),
-                                    "Error \"" << strerror(errno) << "\" occurred while reading from socket for topic " << publishers[threadId]->get_topic_name() << ".");
-                return;
+                throw std::runtime_error("An error occurred while reading from socket.");
             }
         }
     }

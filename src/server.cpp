@@ -2,6 +2,7 @@
 #include <tcp_tunnel/srv/register_client.hpp>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netinet/tcp.h>
 
 class TCPTunnelServer : public rclcpp::Node
@@ -43,6 +44,7 @@ public:
             RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while creating a socket for topic " << topicName << ".");
             return;
         }
+        fcntl(sockfd, F_SETFL, O_NONBLOCK);
 
         int flag = 1;
         if(setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(int)) < 0)
@@ -56,7 +58,13 @@ public:
         serv_addr.sin_family = AF_INET;
         serv_addr.sin_addr.s_addr = inet_addr(req->client_ip.data.c_str());
         serv_addr.sin_port = htons(req->client_port.data);
-        if(connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0)
+        int n = -1;
+        std::chrono::time_point<std::chrono::steady_clock> startTime = std::chrono::steady_clock::now();
+        while(std::chrono::steady_clock::now() - startTime < std::chrono::duration<float>(3) && n < 0)
+        {
+            n = connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr));
+        }
+        if(n < 0)
         {
             RCLCPP_ERROR_STREAM(this->get_logger(),
                                 "Error \"" << strerror(errno) << "\" occurred while trying to connect to " << req->client_ip.data << " on port " << req->client_port.data
@@ -75,8 +83,16 @@ public:
 
     void subscriptionCallback(std::shared_ptr<rclcpp::SerializedMessage> msg, const int& subscriptionId)
     {
-        writeToSocket(sockets[subscriptionId], &msg->get_rcl_serialized_message().buffer_length, sizeof(size_t));
-        writeToSocket(sockets[subscriptionId], msg->get_rcl_serialized_message().buffer, msg->get_rcl_serialized_message().buffer_length);
+        int n = read(sockets[subscriptionId], nullptr, 1);
+        if(n != 0)
+        {
+            writeToSocket(sockets[subscriptionId], &msg->get_rcl_serialized_message().buffer_length, sizeof(size_t));
+            writeToSocket(sockets[subscriptionId], msg->get_rcl_serialized_message().buffer, msg->get_rcl_serialized_message().buffer_length);
+        }
+        else
+        {
+            throw std::runtime_error("Connection closed by client.");
+        }
     }
 
     void writeToSocket(const int& socketfd, const void* buffer, const size_t& nbBytesToWrite)
@@ -92,7 +108,7 @@ public:
         }
         if(nbBytesWritten < nbBytesToWrite)
         {
-            throw std::runtime_error("An error occurred while reading from socket.");
+            throw std::runtime_error("An error occurred while writing to socket.");
         }
     }
 
