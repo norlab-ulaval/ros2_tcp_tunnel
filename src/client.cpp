@@ -117,20 +117,15 @@ public:
 
     void publishMessageLoop(int threadId)
     {
-        size_t capacity;
-        size_t length;
+        rclcpp::SerializedMessage msg;
         while(rclcpp::ok())
         {
-            int n = read(connectedSockets[threadId], &capacity, sizeof(size_t));
+            int n = read(connectedSockets[threadId], &msg.get_rcl_serialized_message().buffer_length, sizeof(size_t));
             if(n >= 0)
             {
-                readFromSocket(connectedSockets[threadId], ((char*)&capacity)+n, sizeof(size_t)-n);
-                readFromSocket(connectedSockets[threadId], &length, sizeof(size_t));
-
-                rclcpp::SerializedMessage msg;
-                msg.reserve(capacity);
-                readFromSocket(connectedSockets[threadId], msg.get_rcl_serialized_message().buffer, capacity);
-                msg.get_rcl_serialized_message().buffer_length = length;
+                readFromSocket(connectedSockets[threadId], ((char*)&msg.get_rcl_serialized_message().buffer_length) + n, sizeof(size_t) - n);
+                msg.reserve(msg.get_rcl_serialized_message().buffer_length);
+                readFromSocket(connectedSockets[threadId], msg.get_rcl_serialized_message().buffer, msg.get_rcl_serialized_message().buffer_length);
                 publishers[threadId]->publish(msg);
             }
             else if(errno == EWOULDBLOCK)

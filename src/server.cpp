@@ -47,7 +47,7 @@ public:
         }
 
         int flag = 1;
-        if (setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(int)) < 0)
+        if(setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(int)) < 0)
         {
             RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while setting socket options for topic " << topicName << ".");
             return;
@@ -77,9 +77,8 @@ public:
 
     void subscriptionCallback(std::shared_ptr<rclcpp::SerializedMessage> msg, const int& subscriptionId)
     {
-        writeToSocket(sockets[subscriptionId], &msg->get_rcl_serialized_message().buffer_capacity, sizeof(size_t));
         writeToSocket(sockets[subscriptionId], &msg->get_rcl_serialized_message().buffer_length, sizeof(size_t));
-        writeToSocket(sockets[subscriptionId], msg->get_rcl_serialized_message().buffer, msg->get_rcl_serialized_message().buffer_capacity);
+        writeToSocket(sockets[subscriptionId], msg->get_rcl_serialized_message().buffer, msg->get_rcl_serialized_message().buffer_length);
     }
 
     void writeToSocket(const int& socketfd, const void* buffer, const size_t& nbBytesToWrite)
