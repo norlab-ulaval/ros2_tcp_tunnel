@@ -82,8 +82,7 @@ public:
     void writeToSocket(const int& socketfd, const void* buffer, const size_t& nbBytesToWrite)
     {
         size_t nbBytesWritten = 0;
-        std::chrono::time_point<std::chrono::steady_clock> startTime = std::chrono::steady_clock::now();
-        while(std::chrono::steady_clock::now() - startTime < std::chrono::duration<float>(3) && nbBytesWritten < nbBytesToWrite)
+        while(rclcpp::ok() && nbBytesWritten < nbBytesToWrite)
         {
             int n = write(socketfd, ((char*)buffer) + nbBytesWritten, nbBytesToWrite - nbBytesWritten);
             if(n >= 0)

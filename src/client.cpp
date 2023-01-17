@@ -144,8 +144,7 @@ public:
     void readFromSocket(const int& socketfd, void* buffer, const size_t& nbBytesToRead)
     {
         size_t nbBytesRead = 0;
-        std::chrono::time_point<std::chrono::steady_clock> startTime = std::chrono::steady_clock::now();
-        while(std::chrono::steady_clock::now() - startTime < std::chrono::duration<float>(3) && nbBytesRead < nbBytesToRead)
+        while(rclcpp::ok() && nbBytesRead < nbBytesToRead)
         {
             int n = read(socketfd, ((char*)buffer) + nbBytesRead, nbBytesToRead - nbBytesRead);
             if(n >= 0)
