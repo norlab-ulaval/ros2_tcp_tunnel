@@ -12,20 +12,18 @@ public:
     {
 
         registerClientService = this->create_service<tcp_tunnel::srv::RegisterClient>("/tcp_tunnel_server/register_client",
-                                                                                      std::bind(&TCPTunnelServer::registerClientCallback, this, std::placeholders::_1,
-                                                                                                std::placeholders::_2));
+                                                                                      std::bind(&TCPTunnelServer::registerClientCallback, this, std::placeholders::_1));
     }
 
     ~TCPTunnelServer()
     {
-        for(int i = 0; i < sockets.size(); ++i)
+        for(size_t i = 0; i < sockets.size(); ++i)
         {
             close(sockets[i]);
         }
     }
 
-    void registerClientCallback(const std::shared_ptr<tcp_tunnel::srv::RegisterClient::Request> req,
-                                std::shared_ptr<tcp_tunnel::srv::RegisterClient::Response> res)
+    void registerClientCallback(const std::shared_ptr<tcp_tunnel::srv::RegisterClient::Request> req)
     {
         std::string topicName = req->topic.data;
         if(this->get_topic_names_and_types().count(topicName) == 0)

@@ -15,12 +15,12 @@ public:
 
         registerClientClient = this->create_client<tcp_tunnel::srv::RegisterClient>("/tcp_tunnel_server/register_client");
         addTopicService = this->create_service<tcp_tunnel::srv::AddTopic>("/tcp_tunnel_client/add_topic",
-                                                                          std::bind(&TCPTunnelClient::addTopicCallback, this, std::placeholders::_1, std::placeholders::_2));
+                                                                          std::bind(&TCPTunnelClient::addTopicCallback, this, std::placeholders::_1));
     }
 
     ~TCPTunnelClient()
     {
-        for(int i = 0; i < threads.size(); ++i)
+        for(size_t i = 0; i < threads.size(); ++i)
         {
             close(listeningSockets[i]);
             close(connectedSockets[i]);
@@ -28,7 +28,7 @@ public:
         }
     }
 
-    void addTopicCallback(const std::shared_ptr<tcp_tunnel::srv::AddTopic::Request> req, std::shared_ptr<tcp_tunnel::srv::AddTopic::Response> res)
+    void addTopicCallback(const std::shared_ptr<tcp_tunnel::srv::AddTopic::Request> req)
     {
         std::string topicName = req->topic.data;
         if(this->get_topic_names_and_types().count(topicName) == 0)
