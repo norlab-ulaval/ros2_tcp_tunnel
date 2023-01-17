@@ -111,33 +111,27 @@ public:
 
         // create thread
         threads.emplace_back(&TCPTunnelClient::publishMessageLoop, this, threads.size());
+
+        RCLCPP_INFO_STREAM(this->get_logger(), "Successfully added topic to TCP tunnel, new topic " << prefix + topicName << " has been created.");
     }
 
     void publishMessageLoop(int threadId)
     {
-        void* capacityBuffer = malloc(sizeof(size_t));
-        void* lengthBuffer = malloc(sizeof(size_t));
+        size_t capacity;
+        size_t length;
         while(rclcpp::ok())
         {
-            int n = read(connectedSockets[threadId], capacityBuffer, sizeof(size_t));
+            int n = read(connectedSockets[threadId], &capacity, sizeof(size_t));
             if(n >= 0)
             {
-                readFromSocket(connectedSockets[threadId], ((char*)capacityBuffer)+n, sizeof(size_t)-n);
-                size_t capacity = *((size_t*)capacityBuffer);
-
-                readFromSocket(connectedSockets[threadId], lengthBuffer, sizeof(size_t));
-                size_t length = *((size_t*)lengthBuffer);
-
-                void* dataBuffer = malloc(capacity);
-                readFromSocket(connectedSockets[threadId], dataBuffer, capacity);
+                readFromSocket(connectedSockets[threadId], ((char*)&capacity)+n, sizeof(size_t)-n);
+                readFromSocket(connectedSockets[threadId], &length, sizeof(size_t));
 
                 rclcpp::SerializedMessage msg;
                 msg.reserve(capacity);
-                memcpy(msg.get_rcl_serialized_message().buffer, dataBuffer, capacity);
+                readFromSocket(connectedSockets[threadId], msg.get_rcl_serialized_message().buffer, capacity);
                 msg.get_rcl_serialized_message().buffer_length = length;
                 publishers[threadId]->publish(msg);
-
-                free(dataBuffer);
             }
             else if(errno == EWOULDBLOCK)
             {
@@ -150,8 +144,6 @@ public:
                 return;
             }
         }
-        free(lengthBuffer);
-        free(capacityBuffer);
     }
 
     void readFromSocket(const int& socketfd, void* buffer, const size_t& nbBytesToRead)

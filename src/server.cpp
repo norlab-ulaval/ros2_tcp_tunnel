@@ -68,25 +68,18 @@ public:
         sockets.push_back(sockfd);
 
         // create subscription
-        rclcpp::QoS qos = rclcpp::QoS(rclcpp::KeepLast(10));
+        rclcpp::QoS qos = rclcpp::QoS(rclcpp::KeepLast(1));
         subscriptions.push_back(
                 this->create_generic_subscription(topicName, topicType, qos, std::bind(&TCPTunnelServer::subscriptionCallback, this, std::placeholders::_1, subscriptions.size())));
+
+        RCLCPP_INFO_STREAM(this->get_logger(), "Successfully registered client for topic " << topicName << ".");
     }
 
     void subscriptionCallback(std::shared_ptr<rclcpp::SerializedMessage> msg, const int& subscriptionId)
     {
-        size_t capacity = msg->get_rcl_serialized_message().buffer_capacity;
-        const void* capacityBuffer = (const void*)&capacity;
-        writeToSocket(sockets[subscriptionId], capacityBuffer, sizeof(size_t));
-
-        size_t length = msg->get_rcl_serialized_message().buffer_length;
-        const void* lengthBuffer = (const void*)&length;
-        writeToSocket(sockets[subscriptionId], lengthBuffer, sizeof(size_t));
-
-        void* dataBuffer = malloc(capacity);
-        memcpy(dataBuffer, msg->get_rcl_serialized_message().buffer, capacity);
-        writeToSocket(sockets[subscriptionId], dataBuffer, capacity);
-        free(dataBuffer);
+        writeToSocket(sockets[subscriptionId], &msg->get_rcl_serialized_message().buffer_capacity, sizeof(size_t));
+        writeToSocket(sockets[subscriptionId], &msg->get_rcl_serialized_message().buffer_length, sizeof(size_t));
+        writeToSocket(sockets[subscriptionId], msg->get_rcl_serialized_message().buffer, msg->get_rcl_serialized_message().buffer_capacity);
     }
 
     void writeToSocket(const int& socketfd, const void* buffer, const size_t& nbBytesToWrite)
