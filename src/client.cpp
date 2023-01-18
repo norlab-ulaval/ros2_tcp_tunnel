@@ -101,7 +101,7 @@ public:
         connectedSockets.push_back(newsockfd);
 
         // create publisher
-        rclcpp::QoS qos = rclcpp::QoS(rclcpp::KeepLast(10));
+        rclcpp::QoS qos = rclcpp::QoS(rclcpp::KeepLast(1));
         std::string prefix = "/tcp_tunnel_client";
         if(topicName[0] != '/')
         {
