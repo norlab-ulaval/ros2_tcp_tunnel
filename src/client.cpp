@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <tcp_tunnel/srv/add_topic.hpp>
 #include <tcp_tunnel/srv/register_client.hpp>
+#include <fstream>
 
 class TCPTunnelClient : public rclcpp::Node
 {
@@ -12,10 +13,38 @@ public:
     {
         this->declare_parameter<std::string>("client_ip", "127.0.0.1");
         this->get_parameter("client_ip", clientIp);
+        this->declare_parameter<std::string>("initial_topic_list_file_name", "");
+        this->get_parameter("initial_topic_list_file_name", initialTopicListFileName);
 
         registerClientClient = this->create_client<tcp_tunnel::srv::RegisterClient>("/tcp_tunnel_server/register_client");
+
+        if(!initialTopicListFileName.empty())
+        {
+            if(initialTopicListFileName.substr(initialTopicListFileName.size() - 5, 5) != ".yaml")
+            {
+                throw std::runtime_error("Initial topic list file name must end with \".yaml\".");
+            }
+
+            std::this_thread::sleep_for(std::chrono::seconds(1)); // wait a bit to make sure topics are available
+
+            std::ifstream initialTopicListFile(initialTopicListFileName);
+            std::string line;
+            while(std::getline(initialTopicListFile, line))
+            {
+                if(line.find_first_not_of(' ') != std::string::npos)
+                {
+                    if(line.substr(0, 2) != "- ")
+                    {
+                        throw std::runtime_error("Initial topic list file must contain a valid YAML list.");
+                    }
+                    addTopic(line.substr(2));
+                }
+            }
+            initialTopicListFile.close();
+        }
+
         addTopicService = this->create_service<tcp_tunnel::srv::AddTopic>("/tcp_tunnel_client/add_topic",
-                                                                          std::bind(&TCPTunnelClient::addTopicCallback, this, std::placeholders::_1));
+                                                                          std::bind(&TCPTunnelClient::addTopicServiceCallback, this, std::placeholders::_1));
     }
 
     ~TCPTunnelClient()
@@ -28,9 +57,13 @@ public:
         }
     }
 
-    void addTopicCallback(const std::shared_ptr<tcp_tunnel::srv::AddTopic::Request> req)
+    void addTopicServiceCallback(const std::shared_ptr<tcp_tunnel::srv::AddTopic::Request> req)
     {
-        std::string topicName = req->topic.data;
+        addTopic(req->topic.data);
+    }
+
+    void addTopic(const std::string& topicName)
+    {
         if(this->get_topic_names_and_types().count(topicName) == 0)
         {
             RCLCPP_ERROR_STREAM(this->get_logger(), "No topic named " << topicName);
@@ -71,7 +104,7 @@ public:
 
         // call register_client service
         std::shared_ptr<tcp_tunnel::srv::RegisterClient::Request> clientRequest = std::make_shared<tcp_tunnel::srv::RegisterClient::Request>();
-        clientRequest->topic = req->topic;
+        clientRequest->topic.data = topicName;
         std_msgs::msg::String ip;
         ip.data = clientIp;
         clientRequest->client_ip = ip;
@@ -168,6 +201,7 @@ private:
     std::vector<int> connectedSockets;
     std::vector<std::thread> threads;
     std::string clientIp;
+    std::string initialTopicListFileName;
 };
 
 int main(int argc, char** argv)
