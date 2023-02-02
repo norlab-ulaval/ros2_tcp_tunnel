@@ -16,8 +16,6 @@ public:
         this->declare_parameter<std::string>("initial_topic_list_file_name", "");
         this->get_parameter("initial_topic_list_file_name", initialTopicListFileName);
 
-        registerClientClient = this->create_client<tcp_tunnel::srv::RegisterClient>("/tcp_tunnel_server/register_client");
-
         if(!initialTopicListFileName.empty())
         {
             if(initialTopicListFileName.substr(initialTopicListFileName.size() - 5, 5) != ".yaml")
@@ -29,15 +27,28 @@ public:
 
             std::ifstream initialTopicListFile(initialTopicListFileName);
             std::string line;
+            bool startedReadingTopic = false;
+            std::string topicName;
             while(std::getline(initialTopicListFile, line))
             {
                 if(line.find_first_not_of(' ') != std::string::npos)
                 {
-                    if(line.substr(0, 2) != "- ")
+                    if((!startedReadingTopic && line.substr(0, 9) != "- topic: ") || (startedReadingTopic && line.substr(0, 20) != "  server_namespace: "))
                     {
-                        throw std::runtime_error("Initial topic list file must contain a valid YAML list.");
+                        throw std::runtime_error("Initial topic list file does not list topics in the expected format, please refer to the README.");
                     }
-                    addTopic(line.substr(2));
+
+                    if(!startedReadingTopic)
+                    {
+                        startedReadingTopic = true;
+                        topicName = line.substr(9);
+                    }
+                    else
+                    {
+                        std::string serverNamespace = line.substr(20);
+                        addTopic(topicName, serverNamespace);
+                        startedReadingTopic = false;
+                    }
                 }
             }
             initialTopicListFile.close();
@@ -64,10 +75,10 @@ public:
 
     void addTopicServiceCallback(const std::shared_ptr<tcp_tunnel::srv::AddTopic::Request> req)
     {
-        addTopic(req->topic.data);
+        addTopic(req->topic.data, req->server_namespace.data);
     }
 
-    void addTopic(const std::string& topicName)
+    void addTopic(const std::string& topicName, const std::string& serverNamespace)
     {
         if(this->get_topic_names_and_types().count(topicName) == 0)
         {
@@ -116,7 +127,17 @@ public:
         std_msgs::msg::UInt16 port;
         port.data = ntohs(serv_addr.sin_port);
         clientRequest->client_port = port;
-        registerClientClient->async_send_request(clientRequest);
+
+        if(registerClientClients.count(serverNamespace) == 0)
+        {
+            std::string prefix = serverNamespace;
+            if(prefix.back() != '/')
+            {
+                prefix += "/";
+            }
+            registerClientClients.insert({serverNamespace, this->create_client<tcp_tunnel::srv::RegisterClient>(prefix + "tcp_tunnel_server/register_client")});
+        }
+        registerClientClients[serverNamespace]->async_send_request(clientRequest);
 
         // connect to server
         int newsockfd = -1;
@@ -204,7 +225,7 @@ public:
     }
 
 private:
-    rclcpp::Client<tcp_tunnel::srv::RegisterClient>::SharedPtr registerClientClient;
+    std::unordered_map<std::string, rclcpp::Client<tcp_tunnel::srv::RegisterClient>::SharedPtr> registerClientClients;
     rclcpp::Service<tcp_tunnel::srv::AddTopic>::SharedPtr addTopicService;
     std::vector<rclcpp::GenericPublisher::SharedPtr> publishers;
     std::vector<int> listeningSockets;

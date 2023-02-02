@@ -10,8 +10,12 @@ public:
     TCPTunnelServer():
             Node("tcp_tunnel_server")
     {
-
-        registerClientService = this->create_service<tcp_tunnel::srv::RegisterClient>("/tcp_tunnel_server/register_client",
+        std::string prefix = this->get_namespace();
+        if(prefix.back() != '/')
+        {
+            prefix += "/";
+        }
+        registerClientService = this->create_service<tcp_tunnel::srv::RegisterClient>(prefix + "tcp_tunnel_server/register_client",
                                                                                       std::bind(&TCPTunnelServer::registerClientCallback, this, std::placeholders::_1));
     }
 
