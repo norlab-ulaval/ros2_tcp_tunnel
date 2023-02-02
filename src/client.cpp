@@ -43,7 +43,12 @@ public:
             initialTopicListFile.close();
         }
 
-        addTopicService = this->create_service<tcp_tunnel::srv::AddTopic>("/tcp_tunnel_client/add_topic",
+        std::string prefix = this->get_namespace();
+        if(prefix.back() != '/')
+        {
+            prefix += "/";
+        }
+        addTopicService = this->create_service<tcp_tunnel::srv::AddTopic>(prefix + "tcp_tunnel_client/add_topic",
                                                                           std::bind(&TCPTunnelClient::addTopicServiceCallback, this, std::placeholders::_1));
     }
 
@@ -135,8 +140,13 @@ public:
 
         // create publisher
         rclcpp::QoS qos = rclcpp::QoS(rclcpp::KeepLast(1));
-        std::string prefix = "/tcp_tunnel_client";
-        if(topicName[0] != '/')
+        std::string prefix = this->get_namespace();
+        if(prefix.back() != '/')
+        {
+            prefix += "/";
+        }
+        prefix += "tcp_tunnel_client";
+        if(topicName.front() != '/')
         {
             prefix += "/";
         }
