@@ -154,16 +154,12 @@ public:
         while(rclcpp::ok())
         {
             int n = read(connectedSockets[threadId], &msg.get_rcl_serialized_message().buffer_length, sizeof(size_t));
-            if(n > 0)
+            if(n >= 0)
             {
-                readFromSocket(connectedSockets[threadId], ((char*)&msg.get_rcl_serialized_message().buffer_length) + n, sizeof(size_t) - n);
+                readFromSocket(threadId, ((char*)&msg.get_rcl_serialized_message().buffer_length) + n, sizeof(size_t) - n);
                 msg.reserve(msg.get_rcl_serialized_message().buffer_length);
-                readFromSocket(connectedSockets[threadId], msg.get_rcl_serialized_message().buffer, msg.get_rcl_serialized_message().buffer_length);
+                readFromSocket(threadId, msg.get_rcl_serialized_message().buffer, msg.get_rcl_serialized_message().buffer_length);
                 publishers[threadId]->publish(msg);
-            }
-            else if(n == 0)
-            {
-                throw std::runtime_error("Connection closed by server.");
             }
             else if(errno == EWOULDBLOCK)
             {
@@ -176,15 +172,19 @@ public:
         }
     }
 
-    void readFromSocket(const int& socketfd, void* buffer, const size_t& nbBytesToRead)
+    void readFromSocket(const int& socketId, void* buffer, const size_t& nbBytesToRead)
     {
         size_t nbBytesRead = 0;
         while(rclcpp::ok() && nbBytesRead < nbBytesToRead)
         {
-            int n = read(socketfd, ((char*)buffer) + nbBytesRead, nbBytesToRead - nbBytesRead);
-            if(n >= 0)
+            int n = read(connectedSockets[socketId], ((char*)buffer) + nbBytesRead, nbBytesToRead - nbBytesRead);
+            if(n > 0)
             {
                 nbBytesRead += n;
+            }
+            else if(n == 0)
+            {
+                throw std::runtime_error("Connection closed by server.");
             }
         }
         if(nbBytesRead < nbBytesToRead)

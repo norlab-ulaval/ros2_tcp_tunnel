@@ -2,7 +2,6 @@
 #include <tcp_tunnel/srv/register_client.hpp>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <fcntl.h>
 #include <netinet/tcp.h>
 
 class TCPTunnelServer : public rclcpp::Node
@@ -20,7 +19,10 @@ public:
     {
         for(size_t i = 0; i < sockets.size(); ++i)
         {
-            close(sockets[i]);
+            if(socketStatuses[i])
+            {
+                close(sockets[i]);
+            }
         }
     }
 
@@ -44,7 +46,6 @@ public:
             RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while creating a socket for topic " << topicName << ".");
             return;
         }
-        fcntl(sockfd, F_SETFL, O_NONBLOCK);
 
         int flag = 1;
         if(setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(int)) < 0)
@@ -58,13 +59,7 @@ public:
         serv_addr.sin_family = AF_INET;
         serv_addr.sin_addr.s_addr = inet_addr(req->client_ip.data.c_str());
         serv_addr.sin_port = htons(req->client_port.data);
-        int n = -1;
-        std::chrono::time_point<std::chrono::steady_clock> startTime = std::chrono::steady_clock::now();
-        while(std::chrono::steady_clock::now() - startTime < std::chrono::duration<float>(3) && n < 0)
-        {
-            n = connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr));
-        }
-        if(n < 0)
+        if(connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0)
         {
             RCLCPP_ERROR_STREAM(this->get_logger(),
                                 "Error \"" << strerror(errno) << "\" occurred while trying to connect to " << req->client_ip.data << " on port " << req->client_port.data
@@ -72,6 +67,7 @@ public:
             return;
         }
         sockets.push_back(sockfd);
+        socketStatuses.push_back(true);
 
         // create subscription
         rclcpp::QoS qos = rclcpp::QoS(rclcpp::KeepLast(1));
@@ -83,32 +79,35 @@ public:
 
     void subscriptionCallback(std::shared_ptr<rclcpp::SerializedMessage> msg, const int& subscriptionId)
     {
-        int n = read(sockets[subscriptionId], nullptr, 1);
-        if(n != 0)
-        {
-            writeToSocket(sockets[subscriptionId], &msg->get_rcl_serialized_message().buffer_length, sizeof(size_t));
-            writeToSocket(sockets[subscriptionId], msg->get_rcl_serialized_message().buffer, msg->get_rcl_serialized_message().buffer_length);
-        }
-        else
-        {
-            throw std::runtime_error("Connection closed by client.");
-        }
+        writeToSocket(subscriptionId, &msg->get_rcl_serialized_message().buffer_length, sizeof(size_t));
+        writeToSocket(subscriptionId, msg->get_rcl_serialized_message().buffer, msg->get_rcl_serialized_message().buffer_length);
     }
 
-    void writeToSocket(const int& socketfd, const void* buffer, const size_t& nbBytesToWrite)
+    void writeToSocket(const int& socketId, const void* buffer, const size_t& nbBytesToWrite)
     {
-        size_t nbBytesWritten = 0;
-        while(rclcpp::ok() && nbBytesWritten < nbBytesToWrite)
+        if(socketStatuses[socketId])
         {
-            int n = write(socketfd, ((char*)buffer) + nbBytesWritten, nbBytesToWrite - nbBytesWritten);
-            if(n >= 0)
+            size_t nbBytesWritten = 0;
+            while(rclcpp::ok() && nbBytesWritten < nbBytesToWrite)
             {
-                nbBytesWritten += n;
+                int n = send(sockets[socketId], ((char*)buffer) + nbBytesWritten, nbBytesToWrite - nbBytesWritten, MSG_NOSIGNAL);
+                if(n >= 0)
+                {
+                    nbBytesWritten += n;
+                }
+                else if(errno == EPIPE)
+                {
+                    RCLCPP_INFO_STREAM(this->get_logger(), "Connection closed by client for topic " << subscriptions[socketId]->get_topic_name() << ".");
+                    socketStatuses[socketId] = false;
+                    subscriptions[socketId].reset();
+                    close(sockets[socketId]);
+                    return;
+                }
             }
-        }
-        if(nbBytesWritten < nbBytesToWrite)
-        {
-            throw std::runtime_error("An error occurred while writing to socket.");
+            if(nbBytesWritten < nbBytesToWrite)
+            {
+                throw std::runtime_error("An error occurred while writing to socket.");
+            }
         }
     }
 
@@ -116,6 +115,7 @@ private:
     rclcpp::Service<tcp_tunnel::srv::RegisterClient>::SharedPtr registerClientService;
     std::vector<rclcpp::GenericSubscription::SharedPtr> subscriptions;
     std::vector<int> sockets;
+    std::vector<bool> socketStatuses;
 };
 
 int main(int argc, char** argv)
