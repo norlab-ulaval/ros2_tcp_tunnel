@@ -55,6 +55,7 @@ public:
         if(setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(int)) < 0)
         {
             RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while setting socket options for topic " << topicName << ".");
+            close(sockfd);
             return;
         }
 
@@ -68,8 +69,10 @@ public:
             RCLCPP_ERROR_STREAM(this->get_logger(),
                                 "Error \"" << strerror(errno) << "\" occurred while trying to connect to " << req->client_ip.data << " on port " << req->client_port.data
                                            << " for topic " << topicName << ".");
+            close(sockfd);
             return;
         }
+
         sockets.push_back(sockfd);
         socketStatuses.push_back(true);
 
@@ -83,36 +86,37 @@ public:
 
     void subscriptionCallback(std::shared_ptr<rclcpp::SerializedMessage> msg, const int& subscriptionId)
     {
-        writeToSocket(subscriptionId, &msg->get_rcl_serialized_message().buffer_length, sizeof(size_t));
-        writeToSocket(subscriptionId, msg->get_rcl_serialized_message().buffer, msg->get_rcl_serialized_message().buffer_length);
+        if(writeToSocket(subscriptionId, &msg->get_rcl_serialized_message().buffer_length, sizeof(size_t)))
+        {
+            writeToSocket(subscriptionId, msg->get_rcl_serialized_message().buffer, msg->get_rcl_serialized_message().buffer_length);
+        }
     }
 
-    void writeToSocket(const int& socketId, const void* buffer, const size_t& nbBytesToWrite)
+    bool writeToSocket(const int& socketId, const void* buffer, const size_t& nbBytesToWrite)
     {
-        if(socketStatuses[socketId])
+        size_t nbBytesWritten = 0;
+        while(rclcpp::ok() && nbBytesWritten < nbBytesToWrite)
         {
-            size_t nbBytesWritten = 0;
-            while(rclcpp::ok() && nbBytesWritten < nbBytesToWrite)
+            int n = send(sockets[socketId], ((char*)buffer) + nbBytesWritten, nbBytesToWrite - nbBytesWritten, MSG_NOSIGNAL);
+            if(n >= 0)
             {
-                int n = send(sockets[socketId], ((char*)buffer) + nbBytesWritten, nbBytesToWrite - nbBytesWritten, MSG_NOSIGNAL);
-                if(n >= 0)
-                {
-                    nbBytesWritten += n;
-                }
-                else if(errno == EPIPE)
-                {
-                    RCLCPP_INFO_STREAM(this->get_logger(), "Connection closed by client for topic " << subscriptions[socketId]->get_topic_name() << ".");
-                    socketStatuses[socketId] = false;
-                    subscriptions[socketId].reset();
-                    close(sockets[socketId]);
-                    return;
-                }
+                nbBytesWritten += n;
             }
-            if(nbBytesWritten < nbBytesToWrite)
+            else if(errno == EPIPE)
             {
-                throw std::runtime_error("An error occurred while writing to socket.");
+                RCLCPP_INFO_STREAM(this->get_logger(), "Connection closed by client for topic " << subscriptions[socketId]->get_topic_name() << ".");
+                socketStatuses[socketId] = false;
+                subscriptions[socketId].reset();
+                close(sockets[socketId]);
+                return false;
+            }
+            else
+            {
+                throw std::runtime_error(
+                        std::string("Error \"") + strerror(errno) + "\" occurred while writing to socket for topic " + subscriptions[socketId]->get_topic_name() + ".");
             }
         }
+        return true;
     }
 
 private:

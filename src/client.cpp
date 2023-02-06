@@ -67,8 +67,11 @@ public:
     {
         for(size_t i = 0; i < threads.size(); ++i)
         {
-            close(listeningSockets[i]);
-            close(connectedSockets[i]);
+            if(socketStatuses[i])
+            {
+                close(connectedSockets[i]);
+                close(listeningSockets[i]);
+            }
             threads[i].join();
         }
     }
@@ -97,7 +100,13 @@ public:
             RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while creating a socket connection for topic " << topicName << ".");
             return;
         }
-        fcntl(sockfd, F_SETFL, O_NONBLOCK);
+
+        if(fcntl(sockfd, F_SETFL, O_NONBLOCK) < 0)
+        {
+            RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while trying to set a socket flag for topic " << topicName << ".");
+            close(sockfd);
+            return;
+        }
 
         bzero(&serv_addr, sizeof(serv_addr));
         serv_addr.sin_family = AF_INET;
@@ -106,15 +115,16 @@ public:
         if(bind(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0)
         {
             RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while trying to bind to socket for topic " << topicName << ".");
+            close(sockfd);
             return;
         }
-        listeningSockets.push_back(sockfd);
 
         socklen_t socklen = sizeof(serv_addr);
         bzero(&serv_addr, socklen);
         if(getsockname(sockfd, (struct sockaddr*)&serv_addr, &socklen) < 0)
         {
             RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while trying to retrieve TCP port assigned for topic " << topicName << ".");
+            close(sockfd);
             return;
         }
 
@@ -154,10 +164,21 @@ public:
         if(newsockfd < 0)
         {
             RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while accepting connection for topic " << topicName << ".");
+            close(sockfd);
             return;
         }
-        fcntl(newsockfd, F_SETFL, O_NONBLOCK);
+
+        if(fcntl(newsockfd, F_SETFL, O_NONBLOCK) < 0)
+        {
+            RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while trying to set a socket flag for topic " << topicName << ".");
+            close(newsockfd);
+            close(sockfd);
+            return;
+        }
+
+        listeningSockets.push_back(sockfd);
         connectedSockets.push_back(newsockfd);
+        socketStatuses.push_back(true);
 
         // create publisher
         rclcpp::QoS qos = rclcpp::QoS(rclcpp::KeepLast(1));
@@ -187,10 +208,22 @@ public:
             int n = read(connectedSockets[threadId], &msg.get_rcl_serialized_message().buffer_length, sizeof(size_t));
             if(n >= 0)
             {
-                readFromSocket(threadId, ((char*)&msg.get_rcl_serialized_message().buffer_length) + n, sizeof(size_t) - n);
-                msg.reserve(msg.get_rcl_serialized_message().buffer_length);
-                readFromSocket(threadId, msg.get_rcl_serialized_message().buffer, msg.get_rcl_serialized_message().buffer_length);
-                publishers[threadId]->publish(msg);
+                if(readFromSocket(threadId, ((char*)&msg.get_rcl_serialized_message().buffer_length) + n, sizeof(size_t) - n))
+                {
+                    msg.reserve(msg.get_rcl_serialized_message().buffer_length);
+                    if(readFromSocket(threadId, msg.get_rcl_serialized_message().buffer, msg.get_rcl_serialized_message().buffer_length))
+                    {
+                        publishers[threadId]->publish(msg);
+                    }
+                    else
+                    {
+                        return;
+                    }
+                }
+                else
+                {
+                    return;
+                }
             }
             else if(errno == EWOULDBLOCK)
             {
@@ -198,12 +231,13 @@ public:
             }
             else
             {
-                throw std::runtime_error("An error occurred while reading from socket.");
+                throw std::runtime_error(
+                        std::string("Error \"") + strerror(errno) + "\" occurred while reading from socket for topic " + publishers[threadId]->get_topic_name() + ".");
             }
         }
     }
 
-    void readFromSocket(const int& socketId, void* buffer, const size_t& nbBytesToRead)
+    bool readFromSocket(const int& socketId, void* buffer, const size_t& nbBytesToRead)
     {
         size_t nbBytesRead = 0;
         while(rclcpp::ok() && nbBytesRead < nbBytesToRead)
@@ -215,13 +249,24 @@ public:
             }
             else if(n == 0)
             {
-                throw std::runtime_error("Connection closed by server.");
+                RCLCPP_INFO_STREAM(this->get_logger(), "Connection closed by server for topic " << publishers[socketId]->get_topic_name() << ".");
+                socketStatuses[socketId] = false;
+                publishers[socketId].reset();
+                close(connectedSockets[socketId]);
+                close(listeningSockets[socketId]);
+                return false;
+            }
+            else if(errno == EWOULDBLOCK)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            else
+            {
+                throw std::runtime_error(
+                        std::string("Error \"") + strerror(errno) + "\" occurred while reading from socket for topic " + publishers[socketId]->get_topic_name() + ".");
             }
         }
-        if(nbBytesRead < nbBytesToRead)
-        {
-            throw std::runtime_error("An error occurred while reading from socket.");
-        }
+        return true;
     }
 
 private:
@@ -230,6 +275,7 @@ private:
     std::vector<rclcpp::GenericPublisher::SharedPtr> publishers;
     std::vector<int> listeningSockets;
     std::vector<int> connectedSockets;
+    std::vector<bool> socketStatuses;
     std::vector<std::thread> threads;
     std::string clientIp;
     std::string initialTopicListFileName;
