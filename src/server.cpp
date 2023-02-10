@@ -33,12 +33,13 @@ public:
     void registerClientCallback(const std::shared_ptr<tcp_tunnel::srv::RegisterClient::Request> req)
     {
         std::string topicName = req->topic.data;
-        if(this->get_topic_names_and_types().count(topicName) == 0)
+        if(this->get_topic_names_and_types().count(topicName) == 0 || this->get_publishers_info_by_topic(topicName).empty())
         {
             RCLCPP_ERROR_STREAM(this->get_logger(), "No topic named " << topicName);
             return;
         }
         std::string topicType = this->get_topic_names_and_types()[topicName][0];
+        rclcpp::QoS qos = this->get_publishers_info_by_topic(topicName)[0].qos_profile().keep_last(1);
 
         // create socket
         int sockfd;
@@ -77,7 +78,6 @@ public:
         socketStatuses.push_back(true);
 
         // create subscription
-        rclcpp::QoS qos = rclcpp::QoS(rclcpp::KeepLast(1));
         subscriptions.push_back(
                 this->create_generic_subscription(topicName, topicType, qos, std::bind(&TCPTunnelServer::subscriptionCallback, this, std::placeholders::_1, subscriptions.size())));
 

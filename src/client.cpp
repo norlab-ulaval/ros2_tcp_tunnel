@@ -83,12 +83,13 @@ public:
 
     void addTopic(const std::string& topicName, const std::string& serverNamespace)
     {
-        if(this->get_topic_names_and_types().count(topicName) == 0)
+        if(this->get_topic_names_and_types().count(topicName) == 0 || this->get_publishers_info_by_topic(topicName).empty())
         {
             RCLCPP_ERROR_STREAM(this->get_logger(), "No topic named " << topicName);
             return;
         }
         std::string topicType = this->get_topic_names_and_types()[topicName][0];
+        rclcpp::QoS qos = this->get_publishers_info_by_topic(topicName)[0].qos_profile().keep_last(1);
 
         // create socket
         int sockfd;
@@ -181,7 +182,6 @@ public:
         socketStatuses.push_back(true);
 
         // create publisher
-        rclcpp::QoS qos = rclcpp::QoS(rclcpp::KeepLast(1));
         std::string prefix = this->get_namespace();
         if(prefix.back() != '/')
         {
