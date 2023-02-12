@@ -5,6 +5,28 @@
 #include <tcp_tunnel/srv/register_client.hpp>
 #include <fstream>
 
+const std::map<std::string, rclcpp::ReliabilityPolicy> RELIABILITY_POLICIES = {{"BestEffort",    rclcpp::ReliabilityPolicy::BestEffort},
+                                                                               {"Reliable",      rclcpp::ReliabilityPolicy::Reliable},
+                                                                               {"SystemDefault", rclcpp::ReliabilityPolicy::SystemDefault},
+                                                                               {"Unknown",       rclcpp::ReliabilityPolicy::Unknown}};
+const std::map<std::string, rclcpp::DurabilityPolicy> DURABILITY_POLICIES = {{"Volatile",       rclcpp::DurabilityPolicy::Volatile},
+                                                                             {"TransientLocal", rclcpp::DurabilityPolicy::TransientLocal},
+                                                                             {"SystemDefault",  rclcpp::DurabilityPolicy::SystemDefault},
+                                                                             {"Unknown",        rclcpp::DurabilityPolicy::Unknown}};
+const std::map<std::string, rclcpp::LivelinessPolicy> LIVELINESS_POLICIES = {{"Automatic",     rclcpp::LivelinessPolicy::Automatic},
+                                                                             {"ManualByTopic", rclcpp::LivelinessPolicy::ManualByTopic},
+                                                                             {"SystemDefault", rclcpp::LivelinessPolicy::SystemDefault},
+                                                                             {"Unknown",       rclcpp::LivelinessPolicy::Unknown}};
+
+class ServiceCaller : public rclcpp::Node
+{
+public:
+    ServiceCaller():
+            rclcpp::Node("service_caller")
+    {
+    }
+};
+
 class TCPTunnelClient : public rclcpp::Node
 {
 public:
@@ -83,14 +105,6 @@ public:
 
     void addTopic(const std::string& topicName, const std::string& serverNamespace)
     {
-        if(this->get_topic_names_and_types().count(topicName) == 0 || this->get_publishers_info_by_topic(topicName).empty())
-        {
-            RCLCPP_ERROR_STREAM(this->get_logger(), "No topic named " << topicName);
-            return;
-        }
-        std::string topicType = this->get_topic_names_and_types()[topicName][0];
-        rclcpp::QoS qos = this->get_publishers_info_by_topic(topicName)[0].qos_profile().keep_last(1);
-
         // create socket
         int sockfd;
         struct sockaddr_in serv_addr;
@@ -130,25 +144,24 @@ public:
         }
 
         // call register_client service
-        std::shared_ptr<tcp_tunnel::srv::RegisterClient::Request> clientRequest = std::make_shared<tcp_tunnel::srv::RegisterClient::Request>();
-        clientRequest->topic.data = topicName;
+        std::shared_ptr<tcp_tunnel::srv::RegisterClient::Request> registerClientRequest = std::make_shared<tcp_tunnel::srv::RegisterClient::Request>();
+        registerClientRequest->topic.data = topicName;
         std_msgs::msg::String ip;
         ip.data = clientIp;
-        clientRequest->client_ip = ip;
+        registerClientRequest->client_ip = ip;
         std_msgs::msg::UInt16 port;
         port.data = ntohs(serv_addr.sin_port);
-        clientRequest->client_port = port;
+        registerClientRequest->client_port = port;
 
-        if(registerClientClients.count(serverNamespace) == 0)
+        std::string serverPrefix = serverNamespace;
+        if(serverPrefix.back() != '/')
         {
-            std::string prefix = serverNamespace;
-            if(prefix.back() != '/')
-            {
-                prefix += "/";
-            }
-            registerClientClients.insert({serverNamespace, this->create_client<tcp_tunnel::srv::RegisterClient>(prefix + "tcp_tunnel_server/register_client")});
+            serverPrefix += "/";
         }
-        registerClientClients[serverNamespace]->async_send_request(clientRequest);
+        std::shared_ptr<ServiceCaller> serviceCallerNode = std::make_shared<ServiceCaller>();
+        rclcpp::Client<tcp_tunnel::srv::RegisterClient>::SharedPtr registerClientClient = serviceCallerNode->create_client<tcp_tunnel::srv::RegisterClient>(
+                serverPrefix + "tcp_tunnel_server/register_client");
+        rclcpp::detail::FutureAndRequestId registerClientFuture = registerClientClient->async_send_request(registerClientRequest);
 
         // connect to server
         int newsockfd = -1;
@@ -177,27 +190,43 @@ public:
             return;
         }
 
+        // retrieve topic info from server
+        rclcpp::spin_until_future_complete(serviceCallerNode, registerClientFuture);
+        tcp_tunnel::srv::RegisterClient::Response::SharedPtr registerClientResponse = registerClientFuture.get();
+        if(!registerClientResponse->topic_exists.data)
+        {
+            RCLCPP_ERROR_STREAM(this->get_logger(), "Cannot add topic " << topicName << " to TCP tunnel, this topic doesn't exist.");
+            close(newsockfd);
+            close(sockfd);
+            return;
+        }
+        std::string topicType = registerClientResponse->topic_type.data;
+        rclcpp::QoS qos(rclcpp::KeepLast(1));
+        qos.reliability(RELIABILITY_POLICIES.at(registerClientResponse->reliability_policy.data));
+        qos.durability(DURABILITY_POLICIES.at(registerClientResponse->durability_policy.data));
+        qos.liveliness(LIVELINESS_POLICIES.at(registerClientResponse->liveliness_policy.data));
+
         listeningSockets.push_back(sockfd);
         connectedSockets.push_back(newsockfd);
         socketStatuses.push_back(true);
 
         // create publisher
-        std::string prefix = this->get_namespace();
-        if(prefix.back() != '/')
+        std::string clientPrefix = this->get_namespace();
+        if(clientPrefix.back() != '/')
         {
-            prefix += "/";
+            clientPrefix += "/";
         }
-        prefix += "tcp_tunnel_client";
+        clientPrefix += "tcp_tunnel_client";
         if(topicName.front() != '/')
         {
-            prefix += "/";
+            clientPrefix += "/";
         }
-        publishers.push_back(this->create_generic_publisher(prefix + topicName, topicType, qos));
+        publishers.push_back(this->create_generic_publisher(clientPrefix + topicName, topicType, qos));
 
         // create thread
         threads.emplace_back(&TCPTunnelClient::publishMessageLoop, this, threads.size());
 
-        RCLCPP_INFO_STREAM(this->get_logger(), "Successfully added topic to TCP tunnel, new topic " << prefix + topicName << " has been created.");
+        RCLCPP_INFO_STREAM(this->get_logger(), "Successfully added topic to TCP tunnel, new topic " << clientPrefix + topicName << " has been created.");
     }
 
     void publishMessageLoop(int threadId)
@@ -270,7 +299,6 @@ public:
     }
 
 private:
-    std::unordered_map<std::string, rclcpp::Client<tcp_tunnel::srv::RegisterClient>::SharedPtr> registerClientClients;
     rclcpp::Service<tcp_tunnel::srv::AddTopic>::SharedPtr addTopicService;
     std::vector<rclcpp::GenericPublisher::SharedPtr> publishers;
     std::vector<int> listeningSockets;

@@ -4,6 +4,19 @@
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
 
+const std::map<rclcpp::ReliabilityPolicy, std::string> RELIABILITY_POLICIES = {{rclcpp::ReliabilityPolicy::BestEffort, "BestEffort"},
+                                                                               {rclcpp::ReliabilityPolicy::Reliable, "Reliable"},
+                                                                               {rclcpp::ReliabilityPolicy::SystemDefault, "SystemDefault"},
+                                                                               {rclcpp::ReliabilityPolicy::Unknown, "Unknown"}};
+const std::map<rclcpp::DurabilityPolicy, std::string> DURABILITY_POLICIES = {{rclcpp::DurabilityPolicy::Volatile,       "Volatile"},
+                                                                             {rclcpp::DurabilityPolicy::TransientLocal, "TransientLocal"},
+                                                                             {rclcpp::DurabilityPolicy::SystemDefault,  "SystemDefault"},
+                                                                             {rclcpp::DurabilityPolicy::Unknown,        "Unknown"}};
+const std::map<rclcpp::LivelinessPolicy, std::string> LIVELINESS_POLICIES = {{rclcpp::LivelinessPolicy::Automatic,     "Automatic"},
+                                                                             {rclcpp::LivelinessPolicy::ManualByTopic, "ManualByTopic"},
+                                                                             {rclcpp::LivelinessPolicy::SystemDefault, "SystemDefault"},
+                                                                             {rclcpp::LivelinessPolicy::Unknown,       "Unknown"}};
+
 class TCPTunnelServer : public rclcpp::Node
 {
 public:
@@ -16,7 +29,8 @@ public:
             prefix += "/";
         }
         registerClientService = this->create_service<tcp_tunnel::srv::RegisterClient>(prefix + "tcp_tunnel_server/register_client",
-                                                                                      std::bind(&TCPTunnelServer::registerClientCallback, this, std::placeholders::_1));
+                                                                                      std::bind(&TCPTunnelServer::registerClientCallback, this, std::placeholders::_1,
+                                                                                                std::placeholders::_2));
     }
 
     ~TCPTunnelServer()
@@ -30,16 +44,9 @@ public:
         }
     }
 
-    void registerClientCallback(const std::shared_ptr<tcp_tunnel::srv::RegisterClient::Request> req)
+    void registerClientCallback(const std::shared_ptr<tcp_tunnel::srv::RegisterClient::Request> req, std::shared_ptr<tcp_tunnel::srv::RegisterClient::Response> res)
     {
         std::string topicName = req->topic.data;
-        if(this->get_topic_names_and_types().count(topicName) == 0 || this->get_publishers_info_by_topic(topicName).empty())
-        {
-            RCLCPP_ERROR_STREAM(this->get_logger(), "No topic named " << topicName);
-            return;
-        }
-        std::string topicType = this->get_topic_names_and_types()[topicName][0];
-        rclcpp::QoS qos = this->get_publishers_info_by_topic(topicName)[0].qos_profile().keep_last(1);
 
         // create socket
         int sockfd;
@@ -74,12 +81,30 @@ public:
             return;
         }
 
+        // fetch topic info
+        if(this->get_topic_names_and_types().count(topicName) == 0 || this->get_publishers_info_by_topic(topicName).empty())
+        {
+            RCLCPP_ERROR_STREAM(this->get_logger(), "Cannot add topic " << topicName << " to TCP tunnel, this topic doesn't exist.");
+            close(sockfd);
+            res->topic_exists.data = false;
+            return;
+        }
+        std::string topicType = this->get_topic_names_and_types()[topicName][0];
+        rclcpp::QoS qos = this->get_publishers_info_by_topic(topicName)[0].qos_profile();
+
         sockets.push_back(sockfd);
         socketStatuses.push_back(true);
 
         // create subscription
-        subscriptions.push_back(
-                this->create_generic_subscription(topicName, topicType, qos, std::bind(&TCPTunnelServer::subscriptionCallback, this, std::placeholders::_1, subscriptions.size())));
+        subscriptions.push_back(this->create_generic_subscription(topicName, topicType, qos.keep_last(1),
+                                                                  std::bind(&TCPTunnelServer::subscriptionCallback, this, std::placeholders::_1, subscriptions.size())));
+
+        // return topic info to client
+        res->topic_exists.data = true;
+        res->topic_type.data = topicType;
+        res->reliability_policy.data = RELIABILITY_POLICIES.at(qos.reliability());
+        res->durability_policy.data = DURABILITY_POLICIES.at(qos.durability());
+        res->liveliness_policy.data = LIVELINESS_POLICIES.at(qos.liveliness());
 
         RCLCPP_INFO_STREAM(this->get_logger(), "Successfully registered client for topic " << topicName << ".");
     }
