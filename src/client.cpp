@@ -234,34 +234,21 @@ public:
         rclcpp::SerializedMessage msg;
         while(rclcpp::ok())
         {
-            int n = read(connectedSockets[threadId], &msg.get_rcl_serialized_message().buffer_length, sizeof(size_t));
-            if(n >= 0)
+            if(readFromSocket(threadId, &msg.get_rcl_serialized_message().buffer_length, sizeof(size_t)))
             {
-                if(readFromSocket(threadId, ((char*)&msg.get_rcl_serialized_message().buffer_length) + n, sizeof(size_t) - n))
+                msg.reserve(msg.get_rcl_serialized_message().buffer_length);
+                if(readFromSocket(threadId, msg.get_rcl_serialized_message().buffer, msg.get_rcl_serialized_message().buffer_length))
                 {
-                    msg.reserve(msg.get_rcl_serialized_message().buffer_length);
-                    if(readFromSocket(threadId, msg.get_rcl_serialized_message().buffer, msg.get_rcl_serialized_message().buffer_length))
-                    {
-                        publishers[threadId]->publish(msg);
-                    }
-                    else
-                    {
-                        return;
-                    }
+                    publishers[threadId]->publish(msg);
                 }
                 else
                 {
                     return;
                 }
             }
-            else if(errno == EWOULDBLOCK)
-            {
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
             else
             {
-                throw std::runtime_error(
-                        std::string("Error \"") + strerror(errno) + "\" occurred while reading from socket for topic " + publishers[threadId]->get_topic_name() + ".");
+                return;
             }
         }
     }
@@ -295,7 +282,15 @@ public:
                         std::string("Error \"") + strerror(errno) + "\" occurred while reading from socket for topic " + publishers[socketId]->get_topic_name() + ".");
             }
         }
-        return true;
+
+        if(nbBytesRead == nbBytesToRead)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
     }
 
 private:

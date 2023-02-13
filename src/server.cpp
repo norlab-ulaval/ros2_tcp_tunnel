@@ -4,10 +4,10 @@
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
 
-const std::map<rclcpp::ReliabilityPolicy, std::string> RELIABILITY_POLICIES = {{rclcpp::ReliabilityPolicy::BestEffort, "BestEffort"},
-                                                                               {rclcpp::ReliabilityPolicy::Reliable, "Reliable"},
+const std::map<rclcpp::ReliabilityPolicy, std::string> RELIABILITY_POLICIES = {{rclcpp::ReliabilityPolicy::BestEffort,    "BestEffort"},
+                                                                               {rclcpp::ReliabilityPolicy::Reliable,      "Reliable"},
                                                                                {rclcpp::ReliabilityPolicy::SystemDefault, "SystemDefault"},
-                                                                               {rclcpp::ReliabilityPolicy::Unknown, "Unknown"}};
+                                                                               {rclcpp::ReliabilityPolicy::Unknown,       "Unknown"}};
 const std::map<rclcpp::DurabilityPolicy, std::string> DURABILITY_POLICIES = {{rclcpp::DurabilityPolicy::Volatile,       "Volatile"},
                                                                              {rclcpp::DurabilityPolicy::TransientLocal, "TransientLocal"},
                                                                              {rclcpp::DurabilityPolicy::SystemDefault,  "SystemDefault"},
@@ -127,7 +127,7 @@ public:
             {
                 nbBytesWritten += n;
             }
-            else if(errno == EPIPE)
+            else if(errno == EPIPE || errno == ECONNRESET)
             {
                 RCLCPP_INFO_STREAM(this->get_logger(), "Connection closed by client for topic " << subscriptions[socketId]->get_topic_name() << ".");
                 socketStatuses[socketId] = false;
@@ -141,7 +141,15 @@ public:
                         std::string("Error \"") + strerror(errno) + "\" occurred while writing to socket for topic " + subscriptions[socketId]->get_topic_name() + ".");
             }
         }
-        return true;
+
+        if(nbBytesWritten == nbBytesToWrite)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
     }
 
 private:
