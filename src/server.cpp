@@ -44,6 +44,7 @@ public:
         }
     }
 
+private:
     void registerClientCallback(const std::shared_ptr<tcp_tunnel::srv::RegisterClient::Request> req, std::shared_ptr<tcp_tunnel::srv::RegisterClient::Response> res)
     {
         std::string topicName = req->topic.data;
@@ -152,7 +153,6 @@ public:
         }
     }
 
-private:
     rclcpp::Service<tcp_tunnel::srv::RegisterClient>::SharedPtr registerClientService;
     std::vector<rclcpp::GenericSubscription::SharedPtr> subscriptions;
     std::vector<int> sockets;

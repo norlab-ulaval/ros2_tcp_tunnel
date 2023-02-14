@@ -2,6 +2,7 @@
 #include <netinet/in.h>
 #include <fcntl.h>
 #include <tcp_tunnel/srv/add_topic.hpp>
+#include <tcp_tunnel/srv/remove_topic.hpp>
 #include <tcp_tunnel/srv/register_client.hpp>
 #include <fstream>
 
@@ -83,21 +84,27 @@ public:
         }
         addTopicService = this->create_service<tcp_tunnel::srv::AddTopic>(prefix + "tcp_tunnel_client/add_topic",
                                                                           std::bind(&TCPTunnelClient::addTopicServiceCallback, this, std::placeholders::_1));
+        removeTopicService = this->create_service<tcp_tunnel::srv::RemoveTopic>(prefix + "tcp_tunnel_client/remove_topic",
+                                                                                std::bind(&TCPTunnelClient::removeTopicServiceCallback, this, std::placeholders::_1));
     }
 
     ~TCPTunnelClient()
     {
         for(size_t i = 0; i < threads.size(); ++i)
         {
+            if(threads[i].joinable())
+            {
+                threads[i].join();
+            }
             if(socketStatuses[i])
             {
                 close(connectedSockets[i]);
                 close(listeningSockets[i]);
             }
-            threads[i].join();
         }
     }
 
+private:
     void addTopicServiceCallback(const std::shared_ptr<tcp_tunnel::srv::AddTopic::Request> req)
     {
         addTopic(req->topic.data, req->server_namespace.data);
@@ -229,6 +236,33 @@ public:
         RCLCPP_INFO_STREAM(this->get_logger(), "Successfully added topic to TCP tunnel, new topic " << clientPrefix + topicName << " has been created.");
     }
 
+    void removeTopicServiceCallback(const std::shared_ptr<tcp_tunnel::srv::RemoveTopic::Request> req)
+    {
+        int topicId = -1;
+        for(size_t i = 0; i < publishers.size(); ++i)
+        {
+            if(socketStatuses[i] && publishers[i]->get_topic_name() == req->topic.data)
+            {
+                topicId = i;
+                break;
+            }
+        }
+        if(topicId == -1)
+        {
+            RCLCPP_WARN_STREAM(this->get_logger(), "Cannot remove topic " << req->topic.data << ", this topic is not in the TCP tunnel.");
+            return;
+        }
+
+        pthread_cancel(threads[topicId].native_handle());
+        threads[topicId].join();
+        socketStatuses[topicId] = false;
+        publishers[topicId].reset();
+        close(connectedSockets[topicId]);
+        close(listeningSockets[topicId]);
+
+        RCLCPP_INFO_STREAM(this->get_logger(), "Successfully removed topic " << req->topic.data << " from TCP tunnel.");
+    }
+
     void publishMessageLoop(int threadId)
     {
         rclcpp::SerializedMessage msg;
@@ -293,8 +327,8 @@ public:
         }
     }
 
-private:
     rclcpp::Service<tcp_tunnel::srv::AddTopic>::SharedPtr addTopicService;
+    rclcpp::Service<tcp_tunnel::srv::RemoveTopic>::SharedPtr removeTopicService;
     std::vector<rclcpp::GenericPublisher::SharedPtr> publishers;
     std::vector<int> listeningSockets;
     std::vector<int> connectedSockets;

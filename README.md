@@ -22,6 +22,12 @@ server_namespace:
 If the server node is located in the global namespace (default), the `server_namespace` field can be left empty or can be set to '/'.
 This will create a new topic named `/tcp_tunnel_client/<topic name>` published on the subscribing machine in which the messages of the original topic are relayed.
 
+Topics can be removed from the TCP tunnel at any time using the following service call:
+```bash
+ros2 service call /tcp_tunnel_client/remove_topic tcp_tunnel/srv/RemoveTopic "topic:
+  data: '<topic name>'"
+```
+
 ## Advanced Usage
 ### Providing a list of topics on startup of the client node
 It is possible to provide a YAML file listing all the topics to add to the TCP tunnel when starting the client node.
