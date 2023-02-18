@@ -164,15 +164,7 @@ private:
                         std::string("Error \"") + strerror(errno) + "\" occurred while writing to socket for topic " + subscriptions[socketId]->get_topic_name() + ".");
             }
         }
-
-        if(nbBytesWritten == nbBytesToWrite)
-        {
-            return true;
-        }
-        else
-        {
-            return false;
-        }
+        return nbBytesWritten == nbBytesToWrite;
     }
 
     bool readFromSocket(const int& socketId, void* buffer, const size_t& nbBytesToRead)
@@ -185,7 +177,7 @@ private:
             {
                 nbBytesRead += n;
             }
-            else if(n == 0)
+            else if(n == 0 || errno == ECONNRESET)
             {
                 RCLCPP_INFO_STREAM(this->get_logger(), "Connection closed by client for topic " << subscriptions[socketId]->get_topic_name() << ".");
                 socketStatuses[socketId] = false;
@@ -203,15 +195,7 @@ private:
                         std::string("Error \"") + strerror(errno) + "\" occurred while reading from socket for topic " + subscriptions[socketId]->get_topic_name() + ".");
             }
         }
-
-        if(nbBytesRead == nbBytesToRead)
-        {
-            return true;
-        }
-        else
-        {
-            return false;
-        }
+        return nbBytesRead == nbBytesToRead;
     }
 
     rclcpp::Service<tcp_tunnel::srv::RegisterClient>::SharedPtr registerClientService;
