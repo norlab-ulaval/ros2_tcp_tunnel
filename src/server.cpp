@@ -126,12 +126,17 @@ private:
 
     void subscriptionCallback(std::shared_ptr<rclcpp::SerializedMessage> msg, const int& subscriptionId)
     {
-        if(writeToSocket(subscriptionId, &msg->get_rcl_serialized_message().buffer_length, sizeof(size_t)))
+        if(!writeToSocket(subscriptionId, &msg->get_rcl_serialized_message().buffer_length, sizeof(size_t)))
         {
-            if(writeToSocket(subscriptionId, msg->get_rcl_serialized_message().buffer, msg->get_rcl_serialized_message().buffer_length))
-            {
-                readFromSocket(subscriptionId, &confirmationBuffer, sizeof(char));
-            }
+            return;
+        }
+        if(!writeToSocket(subscriptionId, msg->get_rcl_serialized_message().buffer, msg->get_rcl_serialized_message().buffer_length))
+        {
+            return;
+        }
+        if(!readFromSocket(subscriptionId, &confirmationBuffer, sizeof(char)))
+        {
+            return;
         }
     }
 

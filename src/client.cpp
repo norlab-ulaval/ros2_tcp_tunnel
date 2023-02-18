@@ -279,29 +279,20 @@ private:
         rclcpp::SerializedMessage msg;
         while(rclcpp::ok())
         {
-            if(readFromSocket(threadId, &msg.get_rcl_serialized_message().buffer_length, sizeof(size_t)))
-            {
-                msg.reserve(msg.get_rcl_serialized_message().buffer_length);
-                if(readFromSocket(threadId, msg.get_rcl_serialized_message().buffer, msg.get_rcl_serialized_message().buffer_length))
-                {
-                    if(writeToSocket(threadId, &CONFIRMATION_CHARACTER, sizeof(char)))
-                    {
-                        publishers[threadId]->publish(msg);
-                    }
-                    else
-                    {
-                        return;
-                    }
-                }
-                else
-                {
-                    return;
-                }
-            }
-            else
+            if(!readFromSocket(threadId, &msg.get_rcl_serialized_message().buffer_length, sizeof(size_t)))
             {
                 return;
             }
+            msg.reserve(msg.get_rcl_serialized_message().buffer_length);
+            if(!readFromSocket(threadId, msg.get_rcl_serialized_message().buffer, msg.get_rcl_serialized_message().buffer_length))
+            {
+                return;
+            }
+            if(!writeToSocket(threadId, &CONFIRMATION_CHARACTER, sizeof(char)))
+            {
+                return;
+            }
+            publishers[threadId]->publish(msg);
         }
     }
 
