@@ -5,6 +5,7 @@
 #include <tcp_tunnel/srv/remove_topic.hpp>
 #include <tcp_tunnel/srv/register_client.hpp>
 #include <fstream>
+#include <netinet/tcp.h>
 
 const std::map<std::string, rclcpp::ReliabilityPolicy> RELIABILITY_POLICIES = {{"BestEffort",    rclcpp::ReliabilityPolicy::BestEffort},
                                                                                {"Reliable",      rclcpp::ReliabilityPolicy::Reliable},
@@ -18,6 +19,7 @@ const std::map<std::string, rclcpp::LivelinessPolicy> LIVELINESS_POLICIES = {{"A
                                                                              {"ManualByTopic", rclcpp::LivelinessPolicy::ManualByTopic},
                                                                              {"SystemDefault", rclcpp::LivelinessPolicy::SystemDefault},
                                                                              {"Unknown",       rclcpp::LivelinessPolicy::Unknown}};
+const char CONFIRMATION_CHARACTER = '\0';
 
 class ServiceCaller : public rclcpp::Node
 {
@@ -189,6 +191,15 @@ private:
             return;
         }
 
+        int flag = 1;
+        if(setsockopt(newsockfd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(int)) < 0)
+        {
+            RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while setting socket options for topic " << topicName << ".");
+            close(newsockfd);
+            close(sockfd);
+            return;
+        }
+
         if(fcntl(newsockfd, F_SETFL, O_NONBLOCK) < 0)
         {
             RCLCPP_ERROR_STREAM(this->get_logger(), "Error \"" << strerror(errno) << "\" occurred while trying to set a socket flag for topic " << topicName << ".");
@@ -273,7 +284,14 @@ private:
                 msg.reserve(msg.get_rcl_serialized_message().buffer_length);
                 if(readFromSocket(threadId, msg.get_rcl_serialized_message().buffer, msg.get_rcl_serialized_message().buffer_length))
                 {
-                    publishers[threadId]->publish(msg);
+                    if(writeToSocket(threadId, &CONFIRMATION_CHARACTER, sizeof(char)))
+                    {
+                        publishers[threadId]->publish(msg);
+                    }
+                    else
+                    {
+                        return;
+                    }
                 }
                 else
                 {
@@ -318,6 +336,42 @@ private:
         }
 
         if(nbBytesRead == nbBytesToRead)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    bool writeToSocket(const int& socketId, const void* buffer, const size_t& nbBytesToWrite)
+    {
+        size_t nbBytesWritten = 0;
+        while(rclcpp::ok() && nbBytesWritten < nbBytesToWrite)
+        {
+            int n = send(connectedSockets[socketId], ((char*)buffer) + nbBytesWritten, nbBytesToWrite - nbBytesWritten, MSG_NOSIGNAL);
+            if(n >= 0)
+            {
+                nbBytesWritten += n;
+            }
+            else if(errno == EPIPE || errno == ECONNRESET)
+            {
+                RCLCPP_INFO_STREAM(this->get_logger(), "Connection closed by server for topic " << publishers[socketId]->get_topic_name() << ".");
+                socketStatuses[socketId] = false;
+                publishers[socketId].reset();
+                close(connectedSockets[socketId]);
+                close(listeningSockets[socketId]);
+                return false;
+            }
+            else
+            {
+                throw std::runtime_error(
+                        std::string("Error \"") + strerror(errno) + "\" occurred while writing to socket for topic " + publishers[socketId]->get_topic_name() + ".");
+            }
+        }
+
+        if(nbBytesWritten == nbBytesToWrite)
         {
             return true;
         }
