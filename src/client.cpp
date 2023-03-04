@@ -53,6 +53,12 @@ public:
             std::this_thread::sleep_for(std::chrono::seconds(1)); // wait a bit to make sure topics are available
 
             std::ifstream initialTopicListFile(initialTopicListFileName);
+            if(!initialTopicListFile.good())
+            {
+                RCLCPP_ERROR(this->get_logger(), "Cannot open initial topic list file.");
+                exit(1);
+            }
+
             std::string line;
             std::string topicName;
             bool hasReadTopicName = false;
