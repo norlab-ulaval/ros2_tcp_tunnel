@@ -4,6 +4,7 @@
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
 #include <fcntl.h>
+#include "semaphore.h"
 
 const std::map<rclcpp::ReliabilityPolicy, std::string> RELIABILITY_POLICIES = {{rclcpp::ReliabilityPolicy::BestEffort,    "BestEffort"},
                                                                                {rclcpp::ReliabilityPolicy::Reliable,      "Reliable"},
@@ -38,6 +39,11 @@ public:
     {
         for(size_t i = 0; i < sockets.size(); ++i)
         {
+            if(confirmationThreads[i].joinable())
+            {
+                confirmationSemaphores[i]->wakeUp();
+                confirmationThreads[i].join();
+            }
             if(socketStatuses[i])
             {
                 close(sockets[i]);
@@ -110,6 +116,10 @@ private:
         sockets.push_back(sockfd);
         socketStatuses.push_back(true);
 
+        // initialize confirmation thread
+        confirmationSemaphores.emplace_back(std::make_unique<Semaphore>(2));
+        confirmationThreads.emplace_back(&TCPTunnelServer::receiveConfirmationLoop, this, confirmationThreads.size());
+
         // create subscription
         subscriptions.push_back(this->create_generic_subscription(topicName, topicType, qos.keep_last(1),
                                                                   std::bind(&TCPTunnelServer::subscriptionCallback, this, std::placeholders::_1, subscriptions.size())));
@@ -126,6 +136,10 @@ private:
 
     void subscriptionCallback(std::shared_ptr<rclcpp::SerializedMessage> msg, const int& subscriptionId)
     {
+        if(!confirmationSemaphores[subscriptionId]->tryAcquire())
+        {
+            return;
+        }
         if(!writeToSocket(subscriptionId, &msg->get_rcl_serialized_message().buffer_length, sizeof(size_t)))
         {
             return;
@@ -134,13 +148,9 @@ private:
         {
             return;
         }
-        if(!readFromSocket(subscriptionId, &confirmationBuffer, sizeof(char)))
-        {
-            return;
-        }
     }
 
-    bool writeToSocket(const int& socketId, const void* buffer, const size_t& nbBytesToWrite)
+    bool writeToSocket(const int& socketId, const void* buffer, const size_t& nbBytesToWrite, const bool& isMainThread = true)
     {
         size_t nbBytesWritten = 0;
         while(rclcpp::ok() && nbBytesWritten < nbBytesToWrite)
@@ -150,12 +160,19 @@ private:
             {
                 nbBytesWritten += n;
             }
-            else if(errno == EPIPE || errno == ECONNRESET)
+            else if(errno == EPIPE || errno == ECONNRESET || errno == EBADF)
             {
-                RCLCPP_INFO_STREAM(this->get_logger(), "Connection closed by client for topic " << subscriptions[socketId]->get_topic_name() << ".");
-                socketStatuses[socketId] = false;
-                subscriptions[socketId].reset();
-                close(sockets[socketId]);
+                if(isMainThread)
+                {
+                    RCLCPP_INFO_STREAM(this->get_logger(), "Connection closed by client for topic " << subscriptions[socketId]->get_topic_name() << ".");
+                    socketStatuses[socketId] = false;
+                    subscriptions[socketId].reset();
+                    close(sockets[socketId]);
+                }
+                else
+                {
+                    confirmationSemaphores[socketId]->release();
+                }
                 return false;
             }
             else
@@ -167,7 +184,19 @@ private:
         return nbBytesWritten == nbBytesToWrite;
     }
 
-    bool readFromSocket(const int& socketId, void* buffer, const size_t& nbBytesToRead)
+    void receiveConfirmationLoop(int threadId)
+    {
+        while(rclcpp::ok())
+        {
+            if(!readFromSocket(threadId, &confirmationBuffer, sizeof(char), false))
+            {
+                return;
+            }
+            confirmationSemaphores[threadId]->release();
+        }
+    }
+
+    bool readFromSocket(const int& socketId, void* buffer, const size_t& nbBytesToRead, const bool& isMainThread = true)
     {
         size_t nbBytesRead = 0;
         while(rclcpp::ok() && nbBytesRead < nbBytesToRead)
@@ -177,12 +206,19 @@ private:
             {
                 nbBytesRead += n;
             }
-            else if(n == 0 || errno == ECONNRESET)
+            else if(n == 0 || errno == ECONNRESET || errno == EBADF)
             {
-                RCLCPP_INFO_STREAM(this->get_logger(), "Connection closed by client for topic " << subscriptions[socketId]->get_topic_name() << ".");
-                socketStatuses[socketId] = false;
-                subscriptions[socketId].reset();
-                close(sockets[socketId]);
+                if(isMainThread)
+                {
+                    RCLCPP_INFO_STREAM(this->get_logger(), "Connection closed by client for topic " << subscriptions[socketId]->get_topic_name() << ".");
+                    socketStatuses[socketId] = false;
+                    subscriptions[socketId].reset();
+                    close(sockets[socketId]);
+                }
+                else
+                {
+                    confirmationSemaphores[socketId]->release();
+                }
                 return false;
             }
             else if(errno == EWOULDBLOCK)
@@ -202,6 +238,8 @@ private:
     std::vector<rclcpp::GenericSubscription::SharedPtr> subscriptions;
     std::vector<int> sockets;
     std::vector<bool> socketStatuses;
+    std::vector<std::thread> confirmationThreads;
+    std::vector<std::unique_ptr<Semaphore>> confirmationSemaphores;
     char confirmationBuffer;
 };
 

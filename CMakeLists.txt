@@ -19,13 +19,15 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   DEPENDENCIES std_msgs
 )
 
-add_executable(server src/server.cpp)
+include_directories(include)
+
+add_executable(server src/server.cpp src/semaphore.cpp)
 ament_target_dependencies(server
   rclcpp
   std_msgs
 )
 
-add_executable(client src/client.cpp)
+add_executable(client src/client.cpp src/semaphore.cpp)
 ament_target_dependencies(client
   rclcpp
   std_msgs

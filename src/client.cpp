@@ -6,6 +6,7 @@
 #include <tcp_tunnel/srv/register_client.hpp>
 #include <fstream>
 #include <netinet/tcp.h>
+#include "semaphore.h"
 
 const std::map<std::string, rclcpp::ReliabilityPolicy> RELIABILITY_POLICIES = {{"BestEffort",    rclcpp::ReliabilityPolicy::BestEffort},
                                                                                {"Reliable",      rclcpp::ReliabilityPolicy::Reliable},
@@ -92,11 +93,16 @@ public:
 
     ~TCPTunnelClient()
     {
-        for(size_t i = 0; i < threads.size(); ++i)
+        for(size_t i = 0; i < publishingThreads.size(); ++i)
         {
-            if(threads[i].joinable())
+            if(publishingThreads[i].joinable())
             {
-                threads[i].join();
+                publishingThreads[i].join();
+            }
+            if(confirmationThreads[i].joinable())
+            {
+                confirmationSemaphores[i]->wakeUp();
+                confirmationThreads[i].join();
             }
             if(socketStatuses[i])
             {
@@ -241,8 +247,12 @@ private:
         }
         publishers.push_back(this->create_generic_publisher(clientPrefix + topicName, topicType, qos));
 
+        // initialize confirmation thread
+        confirmationSemaphores.emplace_back(std::make_unique<Semaphore>(0));
+        confirmationThreads.emplace_back(&TCPTunnelClient::sendConfirmationLoop, this, confirmationThreads.size());
+
         // create thread
-        threads.emplace_back(&TCPTunnelClient::publishMessageLoop, this, threads.size());
+        publishingThreads.emplace_back(&TCPTunnelClient::publishMessageLoop, this, publishingThreads.size());
 
         RCLCPP_INFO_STREAM(this->get_logger(), "Successfully added topic to TCP tunnel, new topic " << clientPrefix + topicName << " has been created.");
     }
@@ -264,12 +274,14 @@ private:
             return;
         }
 
-        pthread_cancel(threads[topicId].native_handle());
-        threads[topicId].join();
+        pthread_cancel(publishingThreads[topicId].native_handle());
+        publishingThreads[topicId].join();
         socketStatuses[topicId] = false;
         publishers[topicId].reset();
         close(connectedSockets[topicId]);
         close(listeningSockets[topicId]);
+        confirmationSemaphores[topicId]->release();
+        confirmationThreads[topicId].join();
 
         RCLCPP_INFO_STREAM(this->get_logger(), "Successfully removed topic " << req->topic.data << " from TCP tunnel.");
     }
@@ -288,15 +300,19 @@ private:
             {
                 return;
             }
-            if(!writeToSocket(threadId, &CONFIRMATION_CHARACTER, sizeof(char)))
+            confirmationSemaphores[threadId]->release();
+            try
+            {
+                publishers[threadId]->publish(msg);
+            }
+            catch(const rclcpp::exceptions::RCLError& error)
             {
                 return;
             }
-            publishers[threadId]->publish(msg);
         }
     }
 
-    bool readFromSocket(const int& socketId, void* buffer, const size_t& nbBytesToRead)
+    bool readFromSocket(const int& socketId, void* buffer, const size_t& nbBytesToRead, const bool& isMainThread = true)
     {
         size_t nbBytesRead = 0;
         while(rclcpp::ok() && nbBytesRead < nbBytesToRead)
@@ -306,13 +322,17 @@ private:
             {
                 nbBytesRead += n;
             }
-            else if(n == 0 || errno == ECONNRESET)
+            else if(n == 0 || errno == ECONNRESET || errno == EBADF)
             {
-                RCLCPP_INFO_STREAM(this->get_logger(), "Connection closed by server for topic " << publishers[socketId]->get_topic_name() << ".");
-                socketStatuses[socketId] = false;
-                publishers[socketId].reset();
-                close(connectedSockets[socketId]);
-                close(listeningSockets[socketId]);
+                if(isMainThread)
+                {
+                    RCLCPP_INFO_STREAM(this->get_logger(), "Connection closed by server for topic " << publishers[socketId]->get_topic_name() << ".");
+                    socketStatuses[socketId] = false;
+                    publishers[socketId].reset();
+                    close(connectedSockets[socketId]);
+                    close(listeningSockets[socketId]);
+                    confirmationSemaphores[socketId]->release();
+                }
                 return false;
             }
             else if(errno == EWOULDBLOCK)
@@ -328,7 +348,22 @@ private:
         return nbBytesRead == nbBytesToRead;
     }
 
-    bool writeToSocket(const int& socketId, const void* buffer, const size_t& nbBytesToWrite)
+    void sendConfirmationLoop(int threadId)
+    {
+        while(rclcpp::ok())
+        {
+            if(!confirmationSemaphores[threadId]->acquire())
+            {
+                return;
+            }
+            if(!writeToSocket(threadId, &CONFIRMATION_CHARACTER, sizeof(char), false))
+            {
+                return;
+            }
+        }
+    }
+
+    bool writeToSocket(const int& socketId, const void* buffer, const size_t& nbBytesToWrite, const bool& isMainThread = true)
     {
         size_t nbBytesWritten = 0;
         while(rclcpp::ok() && nbBytesWritten < nbBytesToWrite)
@@ -338,13 +373,17 @@ private:
             {
                 nbBytesWritten += n;
             }
-            else if(errno == EPIPE || errno == ECONNRESET)
+            else if(errno == EPIPE || errno == ECONNRESET || errno == EBADF)
             {
-                RCLCPP_INFO_STREAM(this->get_logger(), "Connection closed by server for topic " << publishers[socketId]->get_topic_name() << ".");
-                socketStatuses[socketId] = false;
-                publishers[socketId].reset();
-                close(connectedSockets[socketId]);
-                close(listeningSockets[socketId]);
+                if(isMainThread)
+                {
+                    RCLCPP_INFO_STREAM(this->get_logger(), "Connection closed by server for topic " << publishers[socketId]->get_topic_name() << ".");
+                    socketStatuses[socketId] = false;
+                    publishers[socketId].reset();
+                    close(connectedSockets[socketId]);
+                    close(listeningSockets[socketId]);
+                    confirmationSemaphores[socketId]->release();
+                }
                 return false;
             }
             else
@@ -362,7 +401,9 @@ private:
     std::vector<int> listeningSockets;
     std::vector<int> connectedSockets;
     std::vector<bool> socketStatuses;
-    std::vector<std::thread> threads;
+    std::vector<std::thread> publishingThreads;
+    std::vector<std::thread> confirmationThreads;
+    std::vector<std::unique_ptr<Semaphore>> confirmationSemaphores;
     std::string clientIp;
     std::string initialTopicListFileName;
 };
