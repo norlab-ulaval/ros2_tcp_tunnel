@@ -16,9 +16,12 @@ Once both nodes are running, topics can be added to the TCP tunnel dynamically u
 ```bash
 ros2 service call /tcp_tunnel_client/add_topic tcp_tunnel/srv/AddTopic "topic:
   data: '<topic name>'
+tunnel_queue_size:
+  data: '<tunnel queue size>'
 server_namespace:
   data: '<server namespace>'"
 ```
+The `tunnel_queue_size` field can be left empty to use the default value of 2.
 If the server node is located in the global namespace (default), the `server_namespace` field can be left empty or can be set to '/'.
 This will create a new topic named `/tcp_tunnel_client/<topic name>` published on the subscribing machine in which the messages of the original topic are relayed.
 
@@ -29,16 +32,27 @@ ros2 service call /tcp_tunnel_client/remove_topic tcp_tunnel/srv/RemoveTopic "to
 ```
 
 ## Advanced Usage
+### Tuning the tunnel queue size
+The TCP tunnel uses a message acknowledgement mechanism between the server and client nodes.
+The tunnel queue size parameter controls how many messages can be sent simultaneously through the TCP tunnel.
+When the tunnel queue is full, the server drops messages received on the original topic until an acknowledgement is received from the client, after which the next message received on the original topic will be sent through the tunnel.
+If messages are published on the original topic at a higher rate than what can pass through the tunnel, this mechanism will ensure that the tunnel latency does not grow indefinitely.
+The tunnel queue size should be increased by the user until the publishing rate of the relayed topic reaches a plateau.
+Be careful not to overshoot the queue size however, because a tunnel queue size that is too high can increase the latency of the TCP tunnel.
+
 ### Providing a list of topics on startup of the client node
 It is possible to provide a YAML file listing all the topics to add to the TCP tunnel when starting the client node.
 For instance, if the user wanted to add the topics `/foo` and `/bar` automatically on startup of the client node, a YAML file with the following content should be created:
 ```yaml
 - topic: /foo
+  tunnel_queue_size: 2
   server_namespace: /
 
 - topic: /bar
+  tunnel_queue_size: 2
   server_namespace: /
 ```
+The `tunnel_queue_size` field can be left blank to use the default value of 2.
 If a server node is located in the global namespace (default), its `server_namespace` field can be left blank or can be set to '/'.
 This topic list can then be passed to the client node on startup using the following command:
 ```bash
@@ -56,6 +70,8 @@ It is then possible to call the client nodes `add_topic` services in their respe
 ```bash
 ros2 service call <client namespace>/tcp_tunnel_client/add_topic tcp_tunnel/srv/AddTopic "topic:
   data: '<topic name>'
+tunnel_queue_size:
+  data: '<tunnel queue size>'
 server_namespace:
   data: '<server namespace>'"
 ```
@@ -71,6 +87,8 @@ Then, when adding a topic to the TCP tunnel, the proper server namespace must be
 ```bash
 ros2 service call /tcp_tunnel_client/add_topic tcp_tunnel/srv/AddTopic "topic:
   data: '<topic name>'
+tunnel_queue_size:
+  data: '<tunnel queue size>'
 server_namespace:
   data: '<server namespace>'"
 ```

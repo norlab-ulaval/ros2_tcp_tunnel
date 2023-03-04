@@ -46,34 +46,45 @@ public:
         {
             if(initialTopicListFileName.substr(initialTopicListFileName.size() - 5, 5) != ".yaml")
             {
-                throw std::runtime_error("Initial topic list file name must end with \".yaml\".");
+                RCLCPP_ERROR(this->get_logger(), "Initial topic list file name must end with \".yaml\".");
+                exit(1);
             }
 
             std::this_thread::sleep_for(std::chrono::seconds(1)); // wait a bit to make sure topics are available
 
             std::ifstream initialTopicListFile(initialTopicListFileName);
             std::string line;
-            bool startedReadingTopic = false;
             std::string topicName;
+            bool hasReadTopicName = false;
+            std::string tunnelQueueSize;
+            bool hasReadTunnelQueueSize = false;
             while(std::getline(initialTopicListFile, line))
             {
                 if(line.find_first_not_of(' ') != std::string::npos)
                 {
-                    if((!startedReadingTopic && line.substr(0, 9) != "- topic: ") || (startedReadingTopic && line.substr(0, 20) != "  server_namespace: "))
+                    if((!hasReadTopicName && line.substr(0, 9) != "- topic: ") || (hasReadTopicName && !hasReadTunnelQueueSize && line.substr(0, 21) != "  tunnel_queue_size: ") ||
+                       (hasReadTopicName && hasReadTunnelQueueSize && line.substr(0, 20) != "  server_namespace: "))
                     {
-                        throw std::runtime_error("Initial topic list file does not list topics in the expected format, please refer to the README.");
+                        RCLCPP_ERROR(this->get_logger(), "Initial topic list file does not list topics in the expected format, please refer to the README.");
+                        exit(1);
                     }
 
-                    if(!startedReadingTopic)
+                    if(!hasReadTopicName)
                     {
-                        startedReadingTopic = true;
                         topicName = line.substr(9);
+                        hasReadTopicName = true;
+                    }
+                    else if(!hasReadTunnelQueueSize)
+                    {
+                        tunnelQueueSize = line.substr(21);
+                        hasReadTunnelQueueSize = true;
                     }
                     else
                     {
                         std::string serverNamespace = line.substr(20);
-                        addTopic(topicName, serverNamespace);
-                        startedReadingTopic = false;
+                        addTopic(topicName, tunnelQueueSize, serverNamespace);
+                        hasReadTopicName = false;
+                        hasReadTunnelQueueSize = false;
                     }
                 }
             }
@@ -115,11 +126,40 @@ public:
 private:
     void addTopicServiceCallback(const std::shared_ptr<tcp_tunnel::srv::AddTopic::Request> req)
     {
-        addTopic(req->topic.data, req->server_namespace.data);
+        addTopic(req->topic.data, req->tunnel_queue_size.data, req->server_namespace.data);
     }
 
-    void addTopic(const std::string& topicName, const std::string& serverNamespace)
+    void addTopic(const std::string& topicName, const std::string& tunnelQueueSizeStr, const std::string& serverNamespace)
     {
+        // convert tunnel queue size to unsigned long
+        unsigned long tunnelQueueSize = 2;
+        if(!tunnelQueueSizeStr.empty())
+        {
+            for(char character: tunnelQueueSizeStr)
+            {
+                if(!std::isdigit(character))
+                {
+                    RCLCPP_ERROR_STREAM(this->get_logger(), "Cannot add topic " << topicName << " to TCP tunnel, the passed tunnel queue size is not a valid positive integer.");
+                    return;
+                }
+            }
+            try
+            {
+                tunnelQueueSize = std::stoul(tunnelQueueSizeStr);
+
+                if(tunnelQueueSize == 0)
+                {
+                    RCLCPP_ERROR_STREAM(this->get_logger(), "Cannot add topic " << topicName << " to TCP tunnel, the passed tunnel queue size must be greater than 0.");
+                    return;
+                }
+            }
+            catch(const std::out_of_range& exception)
+            {
+                tunnelQueueSize = std::numeric_limits<unsigned long>::max();
+                RCLCPP_WARN_STREAM(this->get_logger(), "Passed value for tunnel queue size was clipped to " << tunnelQueueSize << " for topic " << topicName << ".");
+            }
+        }
+
         // create socket
         int sockfd;
         struct sockaddr_in serv_addr;
@@ -161,6 +201,7 @@ private:
         // call register_client service
         std::shared_ptr<tcp_tunnel::srv::RegisterClient::Request> registerClientRequest = std::make_shared<tcp_tunnel::srv::RegisterClient::Request>();
         registerClientRequest->topic.data = topicName;
+        registerClientRequest->tunnel_queue_size.data = tunnelQueueSize;
         std_msgs::msg::String ip;
         ip.data = clientIp;
         registerClientRequest->client_ip = ip;

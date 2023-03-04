@@ -117,7 +117,7 @@ private:
         socketStatuses.push_back(true);
 
         // initialize confirmation thread
-        confirmationSemaphores.emplace_back(std::make_unique<Semaphore>(2));
+        confirmationSemaphores.emplace_back(std::make_unique<Semaphore>(req->tunnel_queue_size.data));
         confirmationThreads.emplace_back(&TCPTunnelServer::receiveConfirmationLoop, this, confirmationThreads.size());
 
         // create subscription
