@@ -166,6 +166,26 @@ private:
             }
         }
 
+        // make sure that the topic is not already in the tunnel
+        std::string clientPrefix = this->get_namespace();
+        if(clientPrefix.back() != '/')
+        {
+            clientPrefix += "/";
+        }
+        clientPrefix += "tcp_tunnel_client";
+        if(topicName.front() != '/')
+        {
+            clientPrefix += "/";
+        }
+        for(size_t i = 0; i < publishers.size(); ++i)
+        {
+            if(socketStatuses[i] && publishers[i]->get_topic_name() == clientPrefix + topicName)
+            {
+                RCLCPP_WARN_STREAM(this->get_logger(), "Cannot add topic " << topicName << " to TCP tunnel, this topic is already in the tunnel.");
+                return;
+            }
+        }
+
         // create socket
         int sockfd;
         struct sockaddr_in serv_addr;
@@ -282,16 +302,6 @@ private:
         socketStatuses.push_back(true);
 
         // create publisher
-        std::string clientPrefix = this->get_namespace();
-        if(clientPrefix.back() != '/')
-        {
-            clientPrefix += "/";
-        }
-        clientPrefix += "tcp_tunnel_client";
-        if(topicName.front() != '/')
-        {
-            clientPrefix += "/";
-        }
         publishers.push_back(this->create_generic_publisher(clientPrefix + topicName, topicType, qos));
 
         // initialize confirmation thread

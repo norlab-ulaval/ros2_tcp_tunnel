@@ -30,6 +30,7 @@ Topics can be removed from the TCP tunnel at any time using the following servic
 ros2 service call /tcp_tunnel_client/remove_topic tcp_tunnel/srv/RemoveTopic "topic:
   data: '<topic name>'"
 ```
+The provided topic name must be the name of the topic at the exit of the TCP tunnel.
 
 ## Advanced Usage
 ### Tuning the tunnel queue size
