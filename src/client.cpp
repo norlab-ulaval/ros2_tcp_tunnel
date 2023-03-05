@@ -106,6 +106,9 @@ public:
                                                                           std::bind(&TCPTunnelClient::addTopicServiceCallback, this, std::placeholders::_1));
         removeTopicService = this->create_service<tcp_tunnel::srv::RemoveTopic>(prefix + "tcp_tunnel_client/remove_topic",
                                                                                 std::bind(&TCPTunnelClient::removeTopicServiceCallback, this, std::placeholders::_1));
+
+        RCLCPP_INFO_STREAM(this->get_logger(),
+                           "Initialization done, topics can now be added to the TCP tunnel dynamically using the " << prefix << "tcp_tunnel_client/add_topic service.");
     }
 
     ~TCPTunnelClient()
