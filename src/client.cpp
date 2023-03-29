@@ -395,7 +395,7 @@ private:
                 }
                 return false;
             }
-            else if(errno == EWOULDBLOCK)
+            else if(errno == EWOULDBLOCK || errno == EAGAIN)
             {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
@@ -445,6 +445,10 @@ private:
                     confirmationSemaphores[socketId]->release();
                 }
                 return false;
+            }
+            else if(errno == EWOULDBLOCK || errno == EAGAIN)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
             else
             {

@@ -175,6 +175,10 @@ private:
                 }
                 return false;
             }
+            else if(errno == EWOULDBLOCK || errno == EAGAIN)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
             else
             {
                 throw std::runtime_error(
@@ -221,7 +225,7 @@ private:
                 }
                 return false;
             }
-            else if(errno == EWOULDBLOCK)
+            else if(errno == EWOULDBLOCK || errno == EAGAIN)
             {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
