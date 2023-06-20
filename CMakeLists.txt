@@ -22,7 +22,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 
 include_directories(include)
 
-add_executable(server src/server.cpp src/semaphore.cpp src/typesupport_helpers.cpp src/generic_subscription.cpp src/node_extension.cpp)
+add_executable(server src/server.cpp src/semaphore.cpp src/typesupport_helpers.cpp src/generic_subscription.cpp)
 ament_target_dependencies(server
   rclcpp
   std_msgs

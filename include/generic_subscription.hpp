@@ -113,11 +113,6 @@ public:
         // pass
       }
     }
-//    if (options.event_callbacks.message_lost_callback) {
-//      this->add_event_handler(
-//        options.event_callbacks.message_lost_callback,
-//        RCL_SUBSCRIPTION_MESSAGE_LOST);
-//    }
   }
 
   RCLCPP_PUBLIC

@@ -6,8 +6,7 @@
 #include <fcntl.h>
 #include "semaphore.h"
 #include <unistd.h>
-#include "create_generic_subscription.hpp"
-#include "node_extension.h"
+#include "node_extension.hpp"
 
 const std::map<rmw_qos_reliability_policy_t, std::string> RELIABILITY_POLICIES = {{rmw_qos_reliability_policy_t::RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,"BestEffort"},
                                                                                {rmw_qos_reliability_policy_t::RMW_QOS_POLICY_RELIABILITY_RELIABLE,"Reliable"},
@@ -130,9 +129,9 @@ private:
         // return topic info to client
         res->topic_exists.data = true;
         res->topic_type.data = topicType;
-//        res->reliability_policy.data = RELIABILITY_POLICIES.at(qos.reliability());
-//        res->durability_policy.data = DURABILITY_POLICIES.at(qos.durability());
-//        res->liveliness_policy.data = LIVELINESS_POLICIES.at(qos.liveliness());
+        res->reliability_policy.data = RELIABILITY_POLICIES.at(qos.get_rmw_qos_profile().reliability);
+        res->durability_policy.data = DURABILITY_POLICIES.at(qos.get_rmw_qos_profile().durability);
+        res->liveliness_policy.data = LIVELINESS_POLICIES.at(qos.get_rmw_qos_profile().liveliness);
 
         RCLCPP_INFO_STREAM(this->get_logger(), "Successfully registered client for topic " << topicName << ".");
     }
