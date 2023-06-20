@@ -11,6 +11,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/RegisterClient.srv"
@@ -21,10 +22,14 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 
 include_directories(include)
 
-add_executable(server src/server.cpp src/semaphore.cpp)
+add_executable(server src/server.cpp src/semaphore.cpp src/typesupport_helpers.cpp src/generic_subscription.cpp src/node_extension.cpp)
 ament_target_dependencies(server
   rclcpp
   std_msgs
+  ament_index_cpp
+)
+rosidl_target_interfaces(server
+  ${PROJECT_NAME} "rosidl_typesupport_cpp"
 )
 
 add_executable(client src/client.cpp src/semaphore.cpp)
@@ -32,10 +37,10 @@ ament_target_dependencies(client
   rclcpp
   std_msgs
 )
+rosidl_target_interfaces(client
+  ${PROJECT_NAME} "rosidl_typesupport_cpp"
+)
 
-rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
-target_link_libraries(client "${cpp_typesupport_target}")
-target_link_libraries(server "${cpp_typesupport_target}")
 ament_export_dependencies(rosidl_default_runtime)
 
 install(TARGETS client server

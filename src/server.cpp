@@ -5,25 +5,28 @@
 #include <netinet/tcp.h>
 #include <fcntl.h>
 #include "semaphore.h"
+#include <unistd.h>
+#include "create_generic_subscription.hpp"
+#include "node_extension.h"
 
-const std::map<rclcpp::ReliabilityPolicy, std::string> RELIABILITY_POLICIES = {{rclcpp::ReliabilityPolicy::BestEffort,    "BestEffort"},
-                                                                               {rclcpp::ReliabilityPolicy::Reliable,      "Reliable"},
-                                                                               {rclcpp::ReliabilityPolicy::SystemDefault, "SystemDefault"},
-                                                                               {rclcpp::ReliabilityPolicy::Unknown,       "Unknown"}};
-const std::map<rclcpp::DurabilityPolicy, std::string> DURABILITY_POLICIES = {{rclcpp::DurabilityPolicy::Volatile,       "Volatile"},
-                                                                             {rclcpp::DurabilityPolicy::TransientLocal, "TransientLocal"},
-                                                                             {rclcpp::DurabilityPolicy::SystemDefault,  "SystemDefault"},
-                                                                             {rclcpp::DurabilityPolicy::Unknown,        "Unknown"}};
-const std::map<rclcpp::LivelinessPolicy, std::string> LIVELINESS_POLICIES = {{rclcpp::LivelinessPolicy::Automatic,     "Automatic"},
-                                                                             {rclcpp::LivelinessPolicy::ManualByTopic, "ManualByTopic"},
-                                                                             {rclcpp::LivelinessPolicy::SystemDefault, "SystemDefault"},
-                                                                             {rclcpp::LivelinessPolicy::Unknown,       "Unknown"}};
+const std::map<rmw_qos_reliability_policy_t, std::string> RELIABILITY_POLICIES = {{rmw_qos_reliability_policy_t::RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,"BestEffort"},
+                                                                               {rmw_qos_reliability_policy_t::RMW_QOS_POLICY_RELIABILITY_RELIABLE,"Reliable"},
+                                                                               {rmw_qos_reliability_policy_t::RMW_QOS_POLICY_RELIABILITY_SYSTEM_DEFAULT,"SystemDefault"},
+                                                                               {rmw_qos_reliability_policy_t::RMW_QOS_POLICY_RELIABILITY_UNKNOWN,"Unknown"}};
+const std::map<rmw_qos_durability_policy_t, std::string> DURABILITY_POLICIES = {{rmw_qos_durability_policy_t::RMW_QOS_POLICY_DURABILITY_VOLATILE,"Volatile"},
+                                                                             {rmw_qos_durability_policy_t::RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL,"TransientLocal"},
+                                                                             {rmw_qos_durability_policy_t::RMW_QOS_POLICY_DURABILITY_SYSTEM_DEFAULT,"SystemDefault"},
+                                                                             {rmw_qos_durability_policy_t::RMW_QOS_POLICY_DURABILITY_UNKNOWN,"Unknown"}};
+const std::map<rmw_qos_liveliness_policy_t, std::string> LIVELINESS_POLICIES = {{rmw_qos_liveliness_policy_t::RMW_QOS_POLICY_LIVELINESS_AUTOMATIC,"Automatic"},
+                                                                             {rmw_qos_liveliness_policy_t::RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC,"ManualByTopic"},
+                                                                             {rmw_qos_liveliness_policy_t::RMW_QOS_POLICY_LIVELINESS_SYSTEM_DEFAULT,"SystemDefault"},
+                                                                             {rmw_qos_liveliness_policy_t::RMW_QOS_POLICY_LIVELINESS_UNKNOWN,"Unknown"}};
 
-class TCPTunnelServer : public rclcpp::Node
+class TCPTunnelServer : public NodeExtension
 {
 public:
     TCPTunnelServer():
-            Node("tcp_tunnel_server")
+            NodeExtension("tcp_tunnel_server")
     {
         std::string prefix = this->get_namespace();
         if(prefix.back() != '/')
@@ -127,9 +130,9 @@ private:
         // return topic info to client
         res->topic_exists.data = true;
         res->topic_type.data = topicType;
-        res->reliability_policy.data = RELIABILITY_POLICIES.at(qos.reliability());
-        res->durability_policy.data = DURABILITY_POLICIES.at(qos.durability());
-        res->liveliness_policy.data = LIVELINESS_POLICIES.at(qos.liveliness());
+//        res->reliability_policy.data = RELIABILITY_POLICIES.at(qos.reliability());
+//        res->durability_policy.data = DURABILITY_POLICIES.at(qos.durability());
+//        res->liveliness_policy.data = LIVELINESS_POLICIES.at(qos.liveliness());
 
         RCLCPP_INFO_STREAM(this->get_logger(), "Successfully registered client for topic " << topicName << ".");
     }
