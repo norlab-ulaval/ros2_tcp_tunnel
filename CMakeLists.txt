@@ -22,7 +22,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 
 include_directories(include)
 
-add_executable(server src/server.cpp src/semaphore.cpp src/typesupport_helpers.cpp src/generic_subscription.cpp)
+add_executable(server src/server.cpp src/semaphore.cpp src/generic_subscription.cpp src/typesupport_helpers.cpp)
 ament_target_dependencies(server
   rclcpp
   std_msgs
@@ -32,10 +32,11 @@ rosidl_target_interfaces(server
   ${PROJECT_NAME} "rosidl_typesupport_cpp"
 )
 
-add_executable(client src/client.cpp src/semaphore.cpp)
+add_executable(client src/client.cpp src/semaphore.cpp src/generic_publisher.cpp src/typesupport_helpers.cpp)
 ament_target_dependencies(client
   rclcpp
   std_msgs
+  ament_index_cpp
 )
 rosidl_target_interfaces(client
   ${PROJECT_NAME} "rosidl_typesupport_cpp"

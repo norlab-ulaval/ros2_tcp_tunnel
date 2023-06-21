@@ -4,8 +4,8 @@
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
 #include <fcntl.h>
-#include "semaphore.h"
 #include <unistd.h>
+#include "semaphore.h"
 #include "node_extension.hpp"
 
 const std::map<rmw_qos_reliability_policy_t, std::string> RELIABILITY_POLICIES = {{rmw_qos_reliability_policy_t::RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,"BestEffort"},

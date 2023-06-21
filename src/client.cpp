@@ -6,20 +6,22 @@
 #include <tcp_tunnel/srv/register_client.hpp>
 #include <fstream>
 #include <netinet/tcp.h>
+#include <unistd.h>
 #include "semaphore.h"
+#include "node_extension.hpp"
 
-const std::map<std::string, rclcpp::ReliabilityPolicy> RELIABILITY_POLICIES = {{"BestEffort",    rclcpp::ReliabilityPolicy::BestEffort},
-                                                                               {"Reliable",      rclcpp::ReliabilityPolicy::Reliable},
-                                                                               {"SystemDefault", rclcpp::ReliabilityPolicy::SystemDefault},
-                                                                               {"Unknown",       rclcpp::ReliabilityPolicy::Unknown}};
-const std::map<std::string, rclcpp::DurabilityPolicy> DURABILITY_POLICIES = {{"Volatile",       rclcpp::DurabilityPolicy::Volatile},
-                                                                             {"TransientLocal", rclcpp::DurabilityPolicy::TransientLocal},
-                                                                             {"SystemDefault",  rclcpp::DurabilityPolicy::SystemDefault},
-                                                                             {"Unknown",        rclcpp::DurabilityPolicy::Unknown}};
-const std::map<std::string, rclcpp::LivelinessPolicy> LIVELINESS_POLICIES = {{"Automatic",     rclcpp::LivelinessPolicy::Automatic},
-                                                                             {"ManualByTopic", rclcpp::LivelinessPolicy::ManualByTopic},
-                                                                             {"SystemDefault", rclcpp::LivelinessPolicy::SystemDefault},
-                                                                             {"Unknown",       rclcpp::LivelinessPolicy::Unknown}};
+const std::map<std::string, rmw_qos_reliability_policy_t> RELIABILITY_POLICIES = {{"BestEffort",    rmw_qos_reliability_policy_t::RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT},
+                                                                               {"Reliable",      rmw_qos_reliability_policy_t::RMW_QOS_POLICY_RELIABILITY_RELIABLE},
+                                                                               {"SystemDefault", rmw_qos_reliability_policy_t::RMW_QOS_POLICY_RELIABILITY_SYSTEM_DEFAULT},
+                                                                               {"Unknown",       rmw_qos_reliability_policy_t::RMW_QOS_POLICY_RELIABILITY_UNKNOWN}};
+const std::map<std::string, rmw_qos_durability_policy_t> DURABILITY_POLICIES = {{"Volatile",       rmw_qos_durability_policy_t::RMW_QOS_POLICY_DURABILITY_VOLATILE},
+                                                                             {"TransientLocal", rmw_qos_durability_policy_t::RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL},
+                                                                             {"SystemDefault",  rmw_qos_durability_policy_t::RMW_QOS_POLICY_DURABILITY_SYSTEM_DEFAULT},
+                                                                             {"Unknown",        rmw_qos_durability_policy_t::RMW_QOS_POLICY_DURABILITY_UNKNOWN}};
+const std::map<std::string, rmw_qos_liveliness_policy_t> LIVELINESS_POLICIES = {{"Automatic",     rmw_qos_liveliness_policy_t::RMW_QOS_POLICY_LIVELINESS_AUTOMATIC},
+                                                                             {"ManualByTopic", rmw_qos_liveliness_policy_t::RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC},
+                                                                             {"SystemDefault", rmw_qos_liveliness_policy_t::RMW_QOS_POLICY_LIVELINESS_SYSTEM_DEFAULT},
+                                                                             {"Unknown",       rmw_qos_liveliness_policy_t::RMW_QOS_POLICY_LIVELINESS_UNKNOWN}};
 const char CONFIRMATION_CHARACTER = '\0';
 
 class ServiceCaller : public rclcpp::Node
@@ -31,11 +33,11 @@ public:
     }
 };
 
-class TCPTunnelClient : public rclcpp::Node
+class TCPTunnelClient : public NodeExtension
 {
 public:
     TCPTunnelClient():
-            Node("tcp_tunnel_client")
+            NodeExtension("tcp_tunnel_client")
     {
         this->declare_parameter<std::string>("client_ip", "127.0.0.1");
         this->get_parameter("client_ip", clientIp);
@@ -103,9 +105,9 @@ public:
             prefix += "/";
         }
         addTopicService = this->create_service<tcp_tunnel::srv::AddTopic>(prefix + "tcp_tunnel_client/add_topic",
-                                                                          std::bind(&TCPTunnelClient::addTopicServiceCallback, this, std::placeholders::_1));
+                                                                          std::bind(&TCPTunnelClient::addTopicServiceCallback, this, std::placeholders::_1, std::placeholders::_2));
         removeTopicService = this->create_service<tcp_tunnel::srv::RemoveTopic>(prefix + "tcp_tunnel_client/remove_topic",
-                                                                                std::bind(&TCPTunnelClient::removeTopicServiceCallback, this, std::placeholders::_1));
+                                                                                std::bind(&TCPTunnelClient::removeTopicServiceCallback, this, std::placeholders::_1, std::placeholders::_2));
 
         RCLCPP_INFO_STREAM(this->get_logger(),
                            "Initialization done, topics can now be added to the TCP tunnel dynamically using the " << prefix << "tcp_tunnel_client/add_topic service.");
@@ -133,7 +135,7 @@ public:
     }
 
 private:
-    void addTopicServiceCallback(const std::shared_ptr<tcp_tunnel::srv::AddTopic::Request> req)
+    void addTopicServiceCallback(const std::shared_ptr<tcp_tunnel::srv::AddTopic::Request> req, std::shared_ptr<tcp_tunnel::srv::AddTopic::Response> res)
     {
         addTopic(req->topic.data, req->tunnel_queue_size.data, req->server_namespace.data);
     }
@@ -246,7 +248,7 @@ private:
         std::shared_ptr<ServiceCaller> serviceCallerNode = std::make_shared<ServiceCaller>();
         rclcpp::Client<tcp_tunnel::srv::RegisterClient>::SharedPtr registerClientClient = serviceCallerNode->create_client<tcp_tunnel::srv::RegisterClient>(
                 serverPrefix + "tcp_tunnel_server/register_client");
-        rclcpp::detail::FutureAndRequestId registerClientFuture = registerClientClient->async_send_request(registerClientRequest);
+        std::shared_future<rclcpp::Client<tcp_tunnel::srv::RegisterClient>::SharedResponse> registerClientFuture = registerClientClient->async_send_request(registerClientRequest);
 
         // connect to server
         int newsockfd = -1;
@@ -317,7 +319,7 @@ private:
         RCLCPP_INFO_STREAM(this->get_logger(), "Successfully added topic to TCP tunnel, new topic " << clientPrefix + topicName << " has been created.");
     }
 
-    void removeTopicServiceCallback(const std::shared_ptr<tcp_tunnel::srv::RemoveTopic::Request> req)
+    void removeTopicServiceCallback(const std::shared_ptr<tcp_tunnel::srv::RemoveTopic::Request> req, std::shared_ptr<tcp_tunnel::srv::RemoveTopic::Response> res)
     {
         int topicId = -1;
         for(size_t i = 0; i < publishers.size(); ++i)
