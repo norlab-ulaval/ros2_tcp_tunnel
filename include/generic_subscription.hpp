@@ -130,13 +130,6 @@ public:
   void handle_message(
     std::shared_ptr<void> & message, const rclcpp::MessageInfo & message_info) override;
 
-  /// Handle dispatching rclcpp::SerializedMessage to user callback.
-  RCLCPP_PUBLIC
-  void
-  handle_serialized_message(
-    const std::shared_ptr<rclcpp::SerializedMessage> & serialized_message,
-    const rclcpp::MessageInfo & message_info);
-
   /// This function is currently not implemented.
   RCLCPP_PUBLIC
   void handle_loaned_message(

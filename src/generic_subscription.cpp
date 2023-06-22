@@ -35,19 +35,10 @@ std::shared_ptr<rclcpp::SerializedMessage> GenericSubscription::create_serialize
 }
 
 void GenericSubscription::handle_message(
-  std::shared_ptr<void> &,
+  std::shared_ptr<void> & message,
   const rclcpp::MessageInfo &)
 {
-  throw rclcpp::exceptions::UnimplementedError(
-          "handle_message is not implemented for GenericSubscription");
-}
-
-void
-GenericSubscription::handle_serialized_message(
-  const std::shared_ptr<rclcpp::SerializedMessage> & message,
-  const rclcpp::MessageInfo &)
-{
-  callback_(message);
+    callback_(std::static_pointer_cast<SerializedMessage>(message));
 }
 
 void GenericSubscription::handle_loaned_message(
