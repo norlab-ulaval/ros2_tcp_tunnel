@@ -33,9 +33,9 @@ namespace rclcpp
  * \param[in] typesupport_identifier Type support identifier, typically "rosidl_typesupport_cpp"
  * \return A shared library
  */
-RCLCPP_PUBLIC
-std::shared_ptr<rcpputils::SharedLibrary>
-get_typesupport_library(const std::string & type, const std::string & typesupport_identifier);
+    RCLCPP_PUBLIC
+    std::shared_ptr<rcpputils::SharedLibrary>
+    get_typesupport_library(const std::string& type, const std::string& typesupport_identifier);
 
 /// Extract the type support handle from the library.
 /**
@@ -45,13 +45,12 @@ get_typesupport_library(const std::string & type, const std::string & typesuppor
  * \param[in] library The shared type support library
  * \return A type support handle
  */
-RCLCPP_PUBLIC
-const rosidl_message_type_support_t *
-get_typesupport_handle(
-  const std::string & type,
-  const std::string & typesupport_identifier,
-  rcpputils::SharedLibrary & library);
-
+    RCLCPP_PUBLIC
+    const rosidl_message_type_support_t*
+    get_typesupport_handle(
+            const std::string& type,
+            const std::string& typesupport_identifier,
+            rcpputils::SharedLibrary& library);
 }  // namespace rclcpp
 
 #endif  // RCLCPP__TYPESUPPORT_HELPERS_HPP_
