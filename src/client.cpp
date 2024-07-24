@@ -256,7 +256,7 @@ private:
         listen(sockfd, 5);
         clilen = sizeof(cli_addr);
         std::chrono::time_point<std::chrono::steady_clock> startTime = std::chrono::steady_clock::now();
-        while(std::chrono::steady_clock::now() - startTime < std::chrono::duration<float>(3) && newsockfd < 0)
+        while(std::chrono::steady_clock::now() - startTime < std::chrono::duration<float>(10) && newsockfd < 0)
         {
             newsockfd = accept(sockfd, (struct sockaddr*)&cli_addr, &clilen);
         }

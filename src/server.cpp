@@ -89,7 +89,7 @@ private:
         serv_addr.sin_addr.s_addr = inet_addr(req->client_ip.data.c_str());
         serv_addr.sin_port = htons(req->client_port.data);
         std::chrono::time_point<std::chrono::steady_clock> startTime = std::chrono::steady_clock::now();
-        while(std::chrono::steady_clock::now() - startTime < std::chrono::duration<float>(3) && n < 0)
+        while(std::chrono::steady_clock::now() - startTime < std::chrono::duration<float>(10) && n < 0)
         {
             n = connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr));
         }
